@@ -1,4 +1,4 @@
-- 本项目基于https://github.com/dickpy/dsh-imagegen修改，如果这个插件对你有帮助，欢迎给这个项目点个 Star。
+- 本项目基于 https://github.com/dickpy/dsh-imagegen 修改，如果这个插件对你有帮助，欢迎给这个项目点个 Star。
 
 </details>
 

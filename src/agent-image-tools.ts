@@ -1,3 +1,7 @@
+// NOTICE (Apache-2.0 §4(b)): Modified in this fork (CatDrinkWork/dsh-imagegen-Personal-modifications)
+// from the upstream @dickpy/dsh-imagegen project (Apache-2.0). Original copyright and license are
+// retained in LICENSE; see MODIFICATIONS.md. Changes in this file: layered Agent task-timeout ceiling
+// derived from the per-request budget (UPSTREAM + IMAGE_FETCH + settle margin).
 /** Agent-facing image-generation tools backed by the shared host queue. */
 
 import type { Context } from '@deepseek-ai/cordis'

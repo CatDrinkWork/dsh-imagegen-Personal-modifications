@@ -1,3 +1,7 @@
+// NOTICE (Apache-2.0 §4(b)): Modified in this fork (CatDrinkWork/dsh-imagegen-Personal-modifications)
+// from the upstream @dickpy/dsh-imagegen project (Apache-2.0). Original copyright and license are
+// retained in LICENSE; see MODIFICATIONS.md. Changes in this file: copy keys for image-to-image
+// multi-reference upload.
 /**
  * dsh-imagegen surface copy: zh is the key source, en mirrors every key.
  */

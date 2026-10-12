@@ -74,7 +74,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dickpy/dsh-imagegen.git"
+    "url": "git+https://github.com/CatDrinkWork/dsh-imagegen-Personal-modifications.git"
   },
   "scripts": {
     "prepare": "tsdown",

@@ -1,3 +1,7 @@
+// NOTICE (Apache-2.0 §4(b)): Modified in this fork (CatDrinkWork/dsh-imagegen-Personal-modifications)
+// from the upstream @dickpy/dsh-imagegen project (Apache-2.0). Original copyright and license are
+// retained in LICENSE; see MODIFICATIONS.md. Changes in this file: image-to-image multi-reference
+// upload (up to 5 images) and inline failure-reason display for failed generation tasks.
 /**
  * The AI 生图 studio: a three-column layout — left, a card-grouped
  * configuration sidebar (mode tabs, prompt with counter, rounded parameter

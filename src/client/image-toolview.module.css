@@ -40,22 +40,40 @@
   overflow-wrap: anywhere;
 }
 
-.images {
+.images,
+.turnImages {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }
 
-.imageLink {
+.imageCard {
+  position: relative;
+  max-width: 100%;
+}
+
+.imageButton,
+.turnImageButton {
   display: block;
-  max-width: min(280px, 100%);
+  max-width: 100%;
+  padding: 0;
   overflow: hidden;
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 6px;
   background: var(--dsw-alias-bg-base);
+  cursor: zoom-in;
 }
 
-.imageLink:hover {
+.imageButton {
+  max-width: min(280px, 100%);
+}
+
+.turnImageButton {
+  max-width: min(420px, 100%);
+}
+
+.imageButton:hover,
+.turnImageButton:hover {
   border-color: var(--dsw-alias-brand-primary);
 }
 
@@ -66,6 +84,144 @@
   height: auto;
   max-height: 220px;
   object-fit: contain;
+}
+
+.turnResult {
+  display: block;
+  min-width: 0;
+}
+
+.turnImage {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 420px;
+  object-fit: contain;
+}
+
+.previewBadge,
+.downloadButton {
+  position: absolute;
+  top: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 6px;
+  backdrop-filter: blur(4px);
+}
+
+.previewBadge {
+  right: 46px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.downloadButton {
+  right: 8px;
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+
+.imageCard:hover .previewBadge,
+.imageCard:hover .downloadButton,
+.downloadButton:focus-visible {
+  opacity: 1;
+}
+
+.downloadButton:hover {
+  background: rgba(0, 0, 0, 0.78);
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 72px 24px 24px;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(7px);
+}
+
+.lightboxImage {
+  display: block;
+  max-width: min(1200px, calc(100vw - 48px));
+  max-height: calc(100vh - 104px);
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
+}
+
+.lightboxActions {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lightboxDownload,
+.lightboxClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  cursor: pointer;
+}
+
+.lightboxDownload {
+  gap: 7px;
+  padding: 0 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.lightboxClose {
+  width: 38px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.lightboxDownload:hover,
+.lightboxClose:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+@media (max-width: 640px) {
+  .lightbox {
+    padding: 64px 12px 12px;
+  }
+
+  .lightboxImage {
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 76px);
+  }
+
+  .previewBadge,
+  .downloadButton {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .previewBadge,
+  .downloadButton {
+    transition: none;
+  }
 }
 
 .error {

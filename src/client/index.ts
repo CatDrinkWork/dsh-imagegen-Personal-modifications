@@ -29,7 +29,7 @@ import { mountSidebarEntry } from './sidebar-entry.ts'
 import { ImageGenSettingsSection, ImageGenSettingsCardController } from './SettingsCard.tsx'
 import { IMAGE_GEN_SECTION_ID, OPEN_IMAGE_GEN_CONFIG_EVENT } from './config-entry.tsx'
 import { bindImageGenScope, type ImageGenScope } from './settings-scope.ts'
-import { registerImageToolviews, type ImageToolViewOwnerProps } from './image-toolview.tsx'
+import { registerImageToolviews, type ImageToolViewOwnerProps, type ImageTurnTailOwnerProps } from './image-toolview.tsx'
 import type { ConversationService } from './conversation-sync.ts'
 
 /** Locale namespace this plugin owns. */
@@ -44,11 +44,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** Image-generation results render their durable image blocks inline. */
     'tool.call.toolview': { kind: 'keyed'; scope: 'session'; owner: ImageToolViewOwnerProps }
+    /** Completed image results remain visible outside the collapsible process disclosure. */
+    'conversation.chat.turnTail': { kind: 'list'; scope: 'session'; owner: ImageTurnTailOwnerProps }
   }
 }
 
 /** Required services (fiber inject waiting — the runtime must be up first). */
-export const inject = ['slots', 'locale', 'connection', 'sessions', 'conversation']
+export const inject = ['slots', 'locale', 'connection', 'sessions', 'conversation', 'uiConversation']
 
 // Internals re-exported for the standalone smoke test (the browser bundle is
 // the only place these are reachable from Node); not part of the contract.

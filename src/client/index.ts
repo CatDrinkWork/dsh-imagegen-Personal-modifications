@@ -198,6 +198,8 @@ export function apply(ctx: ClientContext): void {
         tt('entry.sessionTooltip'),
         tt('entry.image'),
         tt('entry.tooltip'),
+        tt('entry.video'),
+        tt('entry.videoTooltip'),
       ))
       disposers.push(mountPanel(controller, api, scope, { sessions, conversation }))
       // The imperative sidebar tabs render their labels once; relabel them on
@@ -208,6 +210,7 @@ export function apply(ctx: ClientContext): void {
         const labels: Array<[string, string, string]> = [
           ['session', tt('entry.session'), tt('entry.sessionTooltip')],
           ['image', tt('entry.image'), tt('entry.tooltip')],
+          ['video', tt('entry.video'), tt('entry.videoTooltip')],
         ]
         for (const [tab, label, tooltip] of labels) {
           const button = root.querySelector<HTMLButtonElement>(`[data-dsh-imagegen-tab="${tab}"]`)

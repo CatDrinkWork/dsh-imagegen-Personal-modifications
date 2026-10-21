@@ -1,11 +1,11 @@
 /**
- * Add a two-tab switcher above the shell's own New Session affordance:
- * Session (the conversation view) and Image Generation. The shell button stays
- * visible underneath, so creating a new session keeps its old position and the
- * switcher never doubles as the only way out of the studio. When image
- * generation is active, the plugin also uses the shell's region area as a
- * dedicated history surface; the original workspace/session tree remains
- * underneath and is restored when the panel closes.
+ * Add a three-tab switcher above the shell's own New Session affordance:
+ * Session (the conversation view), Image Generation, and Video. The shell button
+ * stays visible underneath, so creating a new session keeps its old position and
+ * the switcher never doubles as the only way out of the studio. When a workbench
+ * is active, the plugin also uses the shell's region area as a dedicated history
+ * surface; the original workspace/session tree remains underneath and is
+ * restored when the panel closes.
  */
 
 import type { ImageGenController } from './controller.ts'
@@ -21,6 +21,9 @@ const IMAGE_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" 
 
 /** Inline conversation glyph for the session-view tab. */
 const SESSION_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3h11v8H7l-3 2.4V11H2.5z"/></svg>'
+
+/** Inline film/video glyph for the video-workbench tab. */
+const VIDEO_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3.5" width="9" height="9" rx="1.5"/><path d="M11 7l3-2v6l-3-2z"/></svg>'
 
 /**
  * Sidebar column markers: the web shell names its grid column `sidebarCol`
@@ -119,6 +122,8 @@ function placeTabs(
   sessionTooltip: string,
   imageLabel: string,
   imageTooltip: string,
+  videoLabel: string,
+  videoTooltip: string,
 ): HTMLDivElement | undefined {
   const button = newSessionButton(root)
   if (button === undefined) return undefined
@@ -137,11 +142,15 @@ function placeTabs(
     controller.close()
   })
   const imageTab = makeTab(imageLabel, imageTooltip, IMAGE_ICON, () => {
-    controller.open()
+    controller.openImage()
+  })
+  const videoTab = makeTab(videoLabel, videoTooltip, VIDEO_ICON, () => {
+    controller.openVideo()
   })
   sessionTab.dataset.dshImagegenTab = 'session'
   imageTab.dataset.dshImagegenTab = 'image'
-  tabs.append(sessionTab, imageTab)
+  videoTab.dataset.dshImagegenTab = 'video'
+  tabs.append(sessionTab, imageTab, videoTab)
 
   // The shell button keeps its own slot below the switcher, untouched.
   button.parentElement?.insertBefore(tabs, button)
@@ -172,6 +181,8 @@ export function mountSidebarEntry(
   sessionTooltip: string,
   imageLabel: string,
   imageTooltip: string,
+  videoLabel: string,
+  videoTooltip: string,
 ): () => void {
   let root: HTMLElement | undefined
   let tabs: HTMLDivElement | undefined
@@ -212,13 +223,11 @@ export function mountSidebarEntry(
     if (tabs === undefined) return
     const sessionTab = tabs.querySelector<HTMLElement>('[data-dsh-imagegen-tab="session"]')
     const imageTab = tabs.querySelector<HTMLElement>('[data-dsh-imagegen-tab="image"]')
-    if (controller.getSnapshot().panelOpen) {
-      if (sessionTab !== null) delete sessionTab.dataset.active
-      if (imageTab !== null) imageTab.dataset.active = ''
-    } else {
-      if (sessionTab !== null) sessionTab.dataset.active = ''
-      if (imageTab !== null) delete imageTab.dataset.active
-    }
+    const videoTab = tabs.querySelector<HTMLElement>('[data-dsh-imagegen-tab="video"]')
+    const active = controller.getSnapshot().activeView
+    if (sessionTab !== null) { if (active === 'session') sessionTab.dataset.active = ''; else delete sessionTab.dataset.active }
+    if (imageTab !== null) { if (active === 'image') imageTab.dataset.active = ''; else delete imageTab.dataset.active }
+    if (videoTab !== null) { if (active === 'video') videoTab.dataset.active = ''; else delete videoTab.dataset.active }
   }
 
   const ensure = (): void => {
@@ -239,7 +248,7 @@ export function mountSidebarEntry(
     if (!button.hasAttribute('data-dsh-imagegen-new-session')) {
       button.setAttribute('data-dsh-imagegen-new-session', '')
     }
-    tabs = placeTabs(root, controller, sessionLabel, sessionTooltip, imageLabel, imageTooltip)
+    tabs = placeTabs(root, controller, sessionLabel, sessionTooltip, imageLabel, imageTooltip, videoLabel, videoTooltip)
     historyHost = placeHistoryHost(root)
     syncActive()
   }

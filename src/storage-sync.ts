@@ -21,8 +21,10 @@ export interface StorageSyncConfig {
   prefix: string
 }
 
-/** Registered by index.ts: uploads `filePath` when the settings allow it. */
-export type StorageUploadHandler = (kind: 'gallery' | 'history', filePath: string) => void
+/** Registered by index.ts: uploads `filePath` when the settings allow it.
+ *  `relName` is the image's stored relative path (`<date>/<file>` or a legacy
+ *  flat name) so the object key can mirror the local date-folder layout. */
+export type StorageUploadHandler = (kind: 'gallery' | 'history', filePath: string, relName: string) => void
 
 let uploadHandler: StorageUploadHandler | undefined
 
@@ -32,9 +34,9 @@ export function setStorageSyncHandler(handler: StorageUploadHandler | undefined)
 }
 
 /** Fire-and-forget notification from the image stores after a file write. */
-export function notifyImageSaved(kind: 'gallery' | 'history', filePath: string): void {
+export function notifyImageSaved(kind: 'gallery' | 'history', filePath: string, relName: string): void {
   try {
-    uploadHandler?.(kind, filePath)
+    uploadHandler?.(kind, filePath, relName)
   } catch {
     // A sync failure must never break the save path.
   }

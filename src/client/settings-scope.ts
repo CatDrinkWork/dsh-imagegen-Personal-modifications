@@ -43,6 +43,33 @@ export interface ImageGenConfig {
   promptApiUrl?: string
   promptApiKey?: string
   promptModel?: string
+  /* ----- video generation (即梦 / Seedance via Volcano Ark) fields ----- */
+  /** Master switch for the video workbench. */
+  videoEnabled?: boolean
+  /** Ark base URL for the contents/generations/tasks API. */
+  videoApiUrl?: string
+  /** Ark API key (secret). The redacted view returns ''; presence is a secret bit. */
+  videoApiKey?: string
+  /** Upstream video model id (e.g. a doubao-seedance alias). */
+  videoModel?: string
+  /** Default resolution tier, e.g. '480p' / '720p' / '1080p'. */
+  videoResolution?: string
+  /** Default aspect ratio, e.g. '16:9'. */
+  videoRatio?: string
+  /** Default per-shot duration in seconds. */
+  videoDuration?: number
+  /** Optional dedicated vision model endpoint for script parsing (else reuses prompt). */
+  videoScriptApiUrl?: string
+  /** Script-parse API key (secret). */
+  videoScriptApiKey?: string
+  /** Script-parse model id. */
+  videoScriptModel?: string
+  /** ffmpeg binary path (default 'ffmpeg' on PATH). */
+  videoFfmpegPath?: string
+  /** Overall per-task timeout in minutes. */
+  videoTimeoutMinutes?: number
+  /** Absolute directory the video library saves to; empty = default videos/. */
+  videoOutputDir?: string
   /* ----- deprecated legacy single-endpoint fields (migrated to channels) ----- */
   apiUrl?: string
   apiKey?: string
@@ -348,5 +375,30 @@ export function imageModelOptions(config: ImageGenConfig | undefined): {
     groups,
     defaultChannelId: defaultId,
     ...defaultModel === undefined ? {} : { defaultModel },
+  }
+}
+
+/**
+ * Project the video settings into the workbench's form defaults. Pure — no
+ * host calls. Applies the shipped fallbacks so the panel never binds an
+ * undefined ratio/resolution/duration, and reports whether the master switch
+ * and an Ark key look configured.
+ */
+export function videoDefaults(config: ImageGenConfig | undefined): {
+  enabled: boolean
+  model: string
+  ratio: string
+  resolution: string
+  duration: number
+} {
+  const duration = Number.isFinite(config?.videoDuration) && (config?.videoDuration ?? 0) > 0
+    ? Math.round(config!.videoDuration!)
+    : 5
+  return {
+    enabled: config?.videoEnabled !== false,
+    model: typeof config?.videoModel === 'string' ? config.videoModel.trim() : '',
+    ratio: typeof config?.videoRatio === 'string' && config.videoRatio.trim() !== '' ? config.videoRatio.trim() : '16:9',
+    resolution: typeof config?.videoResolution === 'string' && config.videoResolution.trim() !== '' ? config.videoResolution.trim() : '720p',
+    duration,
   }
 }

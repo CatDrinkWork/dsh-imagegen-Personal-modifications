@@ -50,6 +50,19 @@ export interface ImageGenSettings {
   skillOutputDir?: string
   skillHeavyTimeoutMinutes?: number
   skillAgentPreset?: string
+  videoEnabled?: boolean
+  videoApiUrl?: string
+  videoApiKey?: string
+  videoModel?: string
+  videoResolution?: string
+  videoRatio?: string
+  videoDuration?: number
+  videoScriptApiUrl?: string
+  videoScriptApiKey?: string
+  videoScriptModel?: string
+  videoFfmpegPath?: string
+  videoTimeoutMinutes?: number
+  videoOutputDir?: string
 }
 
 /** What the card renders. */
@@ -79,6 +92,19 @@ export interface ImageGenSettingsCardState extends CardShell {
   skillOutputDir: CardFieldState
   skillHeavyTimeoutMinutes: CardFieldState
   skillAgentPreset: CardFieldState
+  videoEnabled: CardFieldState
+  videoApiUrl: CardFieldState
+  videoApiKey: CardFieldState
+  videoModel: CardFieldState
+  videoResolution: CardFieldState
+  videoRatio: CardFieldState
+  videoDuration: CardFieldState
+  videoScriptApiUrl: CardFieldState
+  videoScriptApiKey: CardFieldState
+  videoScriptModel: CardFieldState
+  videoFfmpegPath: CardFieldState
+  videoTimeoutMinutes: CardFieldState
+  videoOutputDir: CardFieldState
 }
 
 /** Result of probing the configured object storage from the card. */
@@ -133,6 +159,19 @@ export class ImageGenSettingsCardController {
       textField('skillOutputDir'),
       textField('skillHeavyTimeoutMinutes'),
       textField('skillAgentPreset'),
+      booleanField('videoEnabled'),
+      textField('videoApiUrl'),
+      secretField('videoApiKey'),
+      textField('videoModel'),
+      textField('videoResolution'),
+      textField('videoRatio'),
+      textField('videoDuration'),
+      textField('videoScriptApiUrl'),
+      secretField('videoScriptApiKey'),
+      textField('videoScriptModel'),
+      textField('videoFfmpegPath'),
+      textField('videoTimeoutMinutes'),
+      textField('videoOutputDir'),
     ], {
       secretSettled: (field) => this.scope.getSecretSetSnapshot(field),
     })
@@ -166,6 +205,19 @@ export class ImageGenSettingsCardController {
       skillOutputDir: this.form.field('skillOutputDir'),
       skillHeavyTimeoutMinutes: this.form.field('skillHeavyTimeoutMinutes'),
       skillAgentPreset: this.form.field('skillAgentPreset'),
+      videoEnabled: this.form.field('videoEnabled'),
+      videoApiUrl: this.form.field('videoApiUrl'),
+      videoApiKey: this.form.field('videoApiKey'),
+      videoModel: this.form.field('videoModel'),
+      videoResolution: this.form.field('videoResolution'),
+      videoRatio: this.form.field('videoRatio'),
+      videoDuration: this.form.field('videoDuration'),
+      videoScriptApiUrl: this.form.field('videoScriptApiUrl'),
+      videoScriptApiKey: this.form.field('videoScriptApiKey'),
+      videoScriptModel: this.form.field('videoScriptModel'),
+      videoFfmpegPath: this.form.field('videoFfmpegPath'),
+      videoTimeoutMinutes: this.form.field('videoTimeoutMinutes'),
+      videoOutputDir: this.form.field('videoOutputDir'),
     }
   }
 
@@ -211,7 +263,7 @@ interface UsageCounters {
   totals: Record<string, number>
 }
 
-type SettingsSectionId = 'channels' | 'prompt' | 'storage' | 'skills' | 'general' | null
+type SettingsSectionId = 'channels' | 'prompt' | 'storage' | 'video' | 'skills' | 'general' | null
 
 /** One mutually-exclusive settings group. */
 function SettingsSection(props: {
@@ -498,6 +550,9 @@ export function ImageGenSettingsSection(props: ImageGenSettingsSectionProps) {
     : t('settings.summaryChannels', { ready: readyChannels, total: channels.length })
   const promptSummary = state.promptModel.text.trim() || t('settings.summaryOptional')
   const storageSummary = state.storageEnabled.text === 'true' ? t('settings.summaryEnabled') : t('settings.summaryDisabled')
+  const videoSummary = state.videoEnabled.text === 'false'
+    ? t('settings.summaryDisabled')
+    : (state.videoModel.text.trim() || t('settings.summaryNotConfigured'))
   const skillsSummary = state.skillsEnabled.text === 'false' ? t('settings.summaryDisabled') : t('settings.summaryEnabled')
   const generalSummary = state.enabled.text === 'false' ? t('settings.summaryDisabled') : t('settings.summaryEnabled')
   const overallReady = readyChannels > 0
@@ -508,6 +563,7 @@ export function ImageGenSettingsSection(props: ImageGenSettingsSectionProps) {
     { id: 'channels', label: t('settings.summaryChannelsLabel'), value: channelSummary, tone: readyChannels > 0 ? 'ready' : 'attention' },
     { id: 'prompt', label: t('settings.summaryPromptLabel'), value: promptSummary },
     { id: 'storage', label: t('settings.summaryStorageLabel'), value: storageSummary, tone: state.storageEnabled.text === 'true' ? 'ready' : 'neutral' },
+    { id: 'video', label: t('settings.summaryVideoLabel'), value: videoSummary, tone: state.videoEnabled.text === 'false' ? 'neutral' : (state.videoModel.text.trim() ? 'ready' : 'neutral') },
     { id: 'skills', label: t('settings.summarySkillsLabel'), value: skillsSummary, tone: state.skillsEnabled.text === 'false' ? 'neutral' : 'ready' },
     { id: 'general', label: t('settings.summaryGeneralLabel'), value: generalSummary, tone: state.enabled.text === 'false' ? 'attention' : 'ready' },
   ]
@@ -901,6 +957,153 @@ export function ImageGenSettingsSection(props: ImageGenSettingsSectionProps) {
               {storageTestResult !== null ? <p className={css.failed} role="status">{storageTestResult}</p> : null}
             </div>
             <p className={css.hint}>{t('settings.storageKeyHint')}</p>
+            </SettingsSection>
+
+            <SettingsSection
+              id="video"
+              title={t('settings.videoTitle')}
+              hint={t('settings.videoHint')}
+              summary={videoSummary}
+              tone={state.videoEnabled.text === 'false' ? 'neutral' : (state.videoModel.text.trim() ? 'ready' : 'neutral')}
+              expanded={activeSection === 'video'}
+              onToggle={() => { setActiveSection(activeSection === 'video' ? null : 'video') }}
+            >
+            <BooleanField
+              id="dsh-imagegen-settings-video-enabled"
+              label={t('settings.videoEnabled')}
+              hint={t('settings.videoEnabledHint')}
+              inheritLabel={t('settings.inherit')}
+              onLabel={t('settings.on')}
+              offLabel={t('settings.off')}
+              {...fieldProps}
+              {...state.videoEnabled}
+              onEdit={(text) => { props.edit('videoEnabled', text) }}
+              onReset={() => { props.resetField('videoEnabled') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-video-api-url"
+              label={t('settings.videoApiUrl')}
+              hint={t('settings.videoApiUrlHint')}
+              placeholder="https://ark.cn-beijing.volces.com/api/v3"
+              {...fieldProps}
+              {...state.videoApiUrl}
+              onEdit={(text) => { props.edit('videoApiUrl', text) }}
+              onReset={() => { props.resetField('videoApiUrl') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-video-api-key"
+              label={t('settings.videoApiKey')}
+              hint={t('settings.videoApiKeyHint')}
+              placeholder="…"
+              secret
+              {...fieldProps}
+              {...state.videoApiKey}
+              overridden={false}
+              onEdit={(text) => { props.edit('videoApiKey', text) }}
+              onReset={() => { props.resetField('videoApiKey') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-video-model"
+              label={t('settings.videoModel')}
+              hint={t('settings.videoModelHint')}
+              placeholder="doubao-seedance-…"
+              {...fieldProps}
+              {...state.videoModel}
+              onEdit={(text) => { props.edit('videoModel', text) }}
+              onReset={() => { props.resetField('videoModel') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-video-resolution"
+              label={t('settings.videoResolution')}
+              hint={t('settings.videoResolutionHint')}
+              placeholder="720p"
+              {...fieldProps}
+              {...state.videoResolution}
+              onEdit={(text) => { props.edit('videoResolution', text) }}
+              onReset={() => { props.resetField('videoResolution') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-video-ratio"
+              label={t('settings.videoRatio')}
+              hint={t('settings.videoRatioHint')}
+              placeholder="16:9"
+              {...fieldProps}
+              {...state.videoRatio}
+              onEdit={(text) => { props.edit('videoRatio', text) }}
+              onReset={() => { props.resetField('videoRatio') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-video-duration"
+              label={t('settings.videoDuration')}
+              hint={t('settings.videoDurationHint')}
+              placeholder="5"
+              {...fieldProps}
+              {...state.videoDuration}
+              onEdit={(text) => { props.edit('videoDuration', text) }}
+              onReset={() => { props.resetField('videoDuration') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-video-timeout"
+              label={t('settings.videoTimeout')}
+              hint={t('settings.videoTimeoutHint')}
+              placeholder="30"
+              {...fieldProps}
+              {...state.videoTimeoutMinutes}
+              onEdit={(text) => { props.edit('videoTimeoutMinutes', text) }}
+              onReset={() => { props.resetField('videoTimeoutMinutes') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-video-ffmpeg-path"
+              label={t('settings.videoFfmpegPath')}
+              hint={t('settings.videoFfmpegPathHint')}
+              placeholder="ffmpeg"
+              {...fieldProps}
+              {...state.videoFfmpegPath}
+              onEdit={(text) => { props.edit('videoFfmpegPath', text) }}
+              onReset={() => { props.resetField('videoFfmpegPath') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-video-output-dir"
+              label={t('settings.videoOutputDir')}
+              hint={t('settings.videoOutputDirHint')}
+              placeholder=""
+              {...fieldProps}
+              {...state.videoOutputDir}
+              onEdit={(text) => { props.edit('videoOutputDir', text) }}
+              onReset={() => { props.resetField('videoOutputDir') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-video-script-api-url"
+              label={t('settings.videoScriptApiUrl')}
+              hint={t('settings.videoScriptApiUrlHint')}
+              placeholder=""
+              {...fieldProps}
+              {...state.videoScriptApiUrl}
+              onEdit={(text) => { props.edit('videoScriptApiUrl', text) }}
+              onReset={() => { props.resetField('videoScriptApiUrl') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-video-script-api-key"
+              label={t('settings.videoScriptApiKey')}
+              hint={t('settings.videoScriptApiKeyHint')}
+              placeholder="…"
+              secret
+              {...fieldProps}
+              {...state.videoScriptApiKey}
+              overridden={false}
+              onEdit={(text) => { props.edit('videoScriptApiKey', text) }}
+              onReset={() => { props.resetField('videoScriptApiKey') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-video-script-model"
+              label={t('settings.videoScriptModel')}
+              hint={t('settings.videoScriptModelHint')}
+              placeholder=""
+              {...fieldProps}
+              {...state.videoScriptModel}
+              onEdit={(text) => { props.edit('videoScriptModel', text) }}
+              onReset={() => { props.resetField('videoScriptModel') }}
+            />
             </SettingsSection>
 
             <SettingsSection

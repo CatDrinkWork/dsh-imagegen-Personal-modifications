@@ -302,6 +302,10 @@ import { registerEditImageCommand } from './edit-image-command.ts'
 import { setImageDataRoot, imageDataRoot } from './image-storage-path.ts'
 import { presetById } from './presets.ts'
 import { chatComplete, type PromptModelConfig } from './prompt-enhancer.ts'
+import { VideoGenerationRuntime } from './video-runtime.ts'
+import type { VideoRuntimeView } from './video-runtime.ts'
+import { setVideoFilesRoot } from './video-store.ts'
+import type { VideoUpstreamConfig } from './video-engine.ts'
 import { SkillRunner, setSkillTranslate, canvasSkillCopy, type SkillAgentBackend, type SkillAgentHandle, type SkillCanvasBackend, type SkillChatBackend, type SkillRegistryBackend } from './skill-runner.ts'
 import { installFromArchive, installFromUrl, knownSkillUrl, listLibrary, listLocalSkills, readLocalSkill, removeSkill, SkillStoreError, skillsRoot, type LocalSkill, type LocalSkillIssue } from './skill-store.ts'
 import { applySkillConfigSteps, asConfigDict, configNote, configView, missingFields, parseSkillConfigManifest, readSkillConfigFile, skillConfigKey, valuesFor, type SkillConfigDeclaration, type SkillConfigIssue, type SkillConfigStore } from './skill-config.ts'
@@ -324,6 +328,9 @@ export { generateImage, ImageGenError } from './engine.ts'
 export { promptCharLimit } from './model-catalog.ts'
 export { analyzeLayers, normalizeLayerPlan, MAX_LAYER_IMAGE_BYTES } from './layer-analyzer.ts'
 export { ImageGenerationRuntime } from './generation-runtime.ts'
+export { VideoGenerationRuntime } from './video-runtime.ts'
+export { analyzeVideoScript } from './video-script.ts'
+export { appendVideo, clearVideos, listVideos, readVideoFile, readVideoRange, removeVideo, statVideoFile } from './video-store.ts'
 export { registerAgentImageTools, resolveAgentImageModel } from './agent-image-tools.ts'
 export { latestSessionImage, registerEditImageCommand } from './edit-image-command.ts'
 export { appendGallery, clearGallery, listGallery, readGalleryImage, removeGallery, updateGalleryTags } from './gallery-store.ts'
@@ -414,6 +421,36 @@ export interface Config {
   skillConfig?: Record<string, string>
   /** Secret half of the skill configuration, stored redacted. */
   skillConfigSecrets?: Record<string, string>
+  /* ------------------------------ video generation ---------------------------- */
+  /** Master switch for the video workbench (即梦 / Seedance). */
+  videoEnabled?: boolean
+  /** Ark video API root (contents/generations/tasks is appended to it). */
+  videoApiUrl?: string
+  /** Ark video Bearer key (secret, host-only). */
+  videoApiKey?: string
+  /** Seedance model id sent on submit. */
+  videoModel?: string
+  /** Default resolution tier for new workbench sessions. */
+  videoResolution?: string
+  /** Default aspect ratio for new workbench sessions. */
+  videoRatio?: string
+  /** Default per-shot duration in seconds. */
+  videoDuration?: number
+  /** Vision chat endpoint for storyboard parsing (empty reuses prompt). */
+  videoScriptApiUrl?: string
+  /** Secret for the storyboard-parsing endpoint. */
+  videoScriptApiKey?: string
+  /** Vision model used to parse the storyboard. */
+  videoScriptModel?: string
+  /** Path to the ffmpeg binary used to concatenate shots. */
+  videoFfmpegPath?: string
+  /** Overall per-task video budget in minutes. */
+  videoTimeoutMinutes?: number
+  /**
+   * Absolute directory the video library writes finished cuts + clips under.
+   * Empty keeps the default `<imageDataRoot>/videos`.
+   */
+  videoOutputDir?: string
   /* ----- deprecated legacy single-endpoint fields (migrated to channels) ----- */
   /** Legacy base URL; synthesized into the default channel on upgrade. */
   apiUrl?: string
@@ -464,6 +501,19 @@ const configSchema = z.object({
   skillAgentPreset: z.string().default('').volatile(),
   skillConfig: z.dict(z.string()).default({}).volatile(),
   skillConfigSecrets: z.dict(z.string().role('secret')).default({}).volatile(),
+  videoEnabled: z.boolean().default(true).volatile(),
+  videoApiUrl: z.string().default('https://ark.cn-beijing.volces.com/api/v3').volatile(),
+  videoApiKey: z.string().role('secret').default('').volatile(),
+  videoModel: z.string().default('').volatile(),
+  videoResolution: z.string().default('720p').volatile(),
+  videoRatio: z.string().default('16:9').volatile(),
+  videoDuration: z.number().default(5).volatile(),
+  videoScriptApiUrl: z.string().default('').volatile(),
+  videoScriptApiKey: z.string().role('secret').default('').volatile(),
+  videoScriptModel: z.string().default('').volatile(),
+  videoFfmpegPath: z.string().default('ffmpeg').volatile(),
+  videoTimeoutMinutes: z.number().default(30).volatile(),
+  videoOutputDir: z.string().default('').volatile(),
   apiUrl: z.string().default('').volatile(),
   apiKey: z.string().role('secret').default('').volatile(),
   imageModels: z.array(z.string()).default([]).volatile(),
@@ -581,6 +631,14 @@ export interface EffectiveConfig {
   }
   /** Per-skill configuration values, secrets included (host side only). */
   skillConfig: SkillConfigStore
+  /** Video workbench settings (Ark / Seedance upstream + storyboard model). */
+  video: VideoRuntimeView & {
+    resolution: string
+    ratio: string
+    duration: number
+    /** Vision chat model used to parse an editable storyboard. */
+    script: PromptModelConfig
+  }
 }
 
 /** Whether a channel can back the optional chat model without subscription routing. */
@@ -612,6 +670,17 @@ export function resolvePromptModelConfig(value: EffectiveConfig): PromptModelCon
 }
 
 /**
+ * Resolve the storyboard-parsing vision model. When the video-specific script
+ * fields are left blank the prompt-enhancement endpoint is reused, so a user
+ * who only configured prompt enhancement still gets storyboard parsing.
+ */
+export function resolveVideoScriptModelConfig(value: EffectiveConfig): PromptModelConfig {
+  const script = value.video.script
+  if (script.apiUrl.trim() !== '' && script.model.trim() !== '') return script
+  return resolvePromptModelConfig(value)
+}
+
+/**
  * Mount the settings section, routes, and announcement.
  * @param ctx - host plugin context carrying webServer/systemPrompt.
  * @param config - resolved plugin config (schema defaults applied by the loader).
@@ -623,6 +692,7 @@ export function apply(ctx: Context, config?: Config): (() => void) | void {
   const resolve = (): EffectiveConfig => {
     const value = unwrapConfig(current())
     setImageDataRoot(value.localStoragePath)
+    setVideoFilesRoot(value.videoOutputDir)
     let channels = normalizeChannels(value.channels)
     // Settings scopes are deep-frozen by the host. Legacy migration adds the
     // synthesized default-channel secret, so always work on a detached copy.
@@ -691,6 +761,28 @@ export function apply(ctx: Context, config?: Config): (() => void) | void {
         values: asConfigDict(value.skillConfig),
         secrets: asConfigDict(value.skillConfigSecrets),
       },
+      video: {
+        enabled: value.videoEnabled ?? true,
+        upstream: {
+          apiUrl: typeof value.videoApiUrl === 'string' && value.videoApiUrl.trim() !== ''
+            ? value.videoApiUrl.trim()
+            : 'https://ark.cn-beijing.volces.com/api/v3',
+          apiKey: typeof value.videoApiKey === 'string' ? value.videoApiKey.trim() : '',
+          model: typeof value.videoModel === 'string' ? value.videoModel.trim() : '',
+          timeoutMs: Math.max(1, Math.round(value.videoTimeoutMinutes ?? 30)) * 60_000,
+        } satisfies VideoUpstreamConfig,
+        ffmpegPath: typeof value.videoFfmpegPath === 'string' && value.videoFfmpegPath.trim() !== ''
+          ? value.videoFfmpegPath.trim()
+          : 'ffmpeg',
+        resolution: typeof value.videoResolution === 'string' && value.videoResolution.trim() !== '' ? value.videoResolution.trim() : '720p',
+        ratio: typeof value.videoRatio === 'string' && value.videoRatio.trim() !== '' ? value.videoRatio.trim() : '16:9',
+        duration: Number.isFinite(value.videoDuration) && (value.videoDuration ?? 0) > 0 ? Math.round(value.videoDuration ?? 5) : 5,
+        script: {
+          apiUrl: typeof value.videoScriptApiUrl === 'string' ? value.videoScriptApiUrl.trim() : '',
+          apiKey: typeof value.videoScriptApiKey === 'string' ? value.videoScriptApiKey.trim() : '',
+          model: typeof value.videoScriptModel === 'string' ? value.videoScriptModel.trim() : '',
+        },
+      },
     }
   }
 
@@ -704,12 +796,12 @@ export function apply(ctx: Context, config?: Config): (() => void) | void {
   // Object-storage sync: the image stores announce every file they write; the
   // handler resolves the live settings and uploads when enabled. Fire and
   // forget — a sync failure never blocks the save path.
-  setStorageSyncHandler((kind, filePath) => {
+  setStorageSyncHandler((kind, filePath, relName) => {
     const storage = resolve().storage
     if (!storage.enabled || !storage.endpoint.trim() || storage.secretKey.trim() === '') return
     if (kind === 'gallery' && !storage.syncGallery) return
     if (kind === 'history' && !storage.syncHistory) return
-    const key = `${storage.prefix}/${kind === 'gallery' ? 'gallery' : 'images'}/${path.basename(filePath)}`
+    const key = `${storage.prefix}/${kind === 'gallery' ? 'gallery' : 'images'}/${relName}`
     const data = readFileSync(filePath)
     void putObject(storage, key, data, mimeOfPath(filePath)).catch(() => {
       // Best-effort sync: surfaced through the settings test, never fatal here.
@@ -722,6 +814,12 @@ export function apply(ctx: Context, config?: Config): (() => void) | void {
   // images in the tool result instead of injecting a synthetic user message.
   const subscriptions = new SubscriptionManager(ctx)
   const runtime = new ImageGenerationRuntime(channelsView, undefined, subscriptions)
+  // Video orchestration runs on its own longer-budget queue but reuses the same
+  // live settings view so a key/model edit is picked up per request.
+  const videoRuntime = new VideoGenerationRuntime((): VideoRuntimeView => {
+    const video = resolve().video
+    return { enabled: video.enabled, upstream: video.upstream, ffmpegPath: video.ffmpegPath }
+  })
   const pendingConversationImages = new Map<string, ImageAttachmentRef>()
 
   // Host-rendered copy (skill catalog labels, run errors, produced node titles)
@@ -1031,6 +1129,8 @@ export function apply(ctx: Context, config?: Config): (() => void) | void {
           },
           resolveChannels: channelsView,
           resolvePrompt: () => resolvePromptModelConfig(resolve()),
+          videoRuntime,
+          resolveVideoScript: () => resolveVideoScriptModelConfig(resolve()),
           resolveImageModels: () => {
             const value = resolve()
             return [...new Set(value.channels.flatMap(channel => channel.models.map(model => model.alias)))]

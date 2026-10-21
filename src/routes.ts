@@ -26,10 +26,13 @@ import { baseMime, canvasStore, CanvasConflictError, MAX_CANVAS_FILE_BYTES, mime
 import { buildFilePreview } from './file-preview.ts'
 import { listTemplates, readTemplateImage, refreshTemplates, sampleTemplates } from './templates-store.ts'
 import { addTemplateFavorite, listTemplateFavorites, removeTemplateFavorite } from './template-favorites.ts'
-import { testStorage, type StorageSyncConfig } from './storage-sync.ts'
+import { testStorage, putObject, type StorageSyncConfig } from './storage-sync.ts'
 import { checkForUpdate, CURRENT_VERSION, installUpdate } from './updater.ts'
 import { IMAGE_PRESETS } from './presets.ts'
-import { AGENT_IMAGE_API, CANVAS_API, CANVAS_SKILL_API, CONVERSATION_IMAGE_API, DATA_FOLDER_API, DEFAULT_TEMPLATE_SOURCE_ID, GALLERY_API, GENERATE_API, HISTORY_API, IMAGEGEN_SETTINGS_NAMESPACE, IMAGE_MODEL_API, PRESETS_API, PROMPT_ENHANCE_API, SETTINGS_API, STORAGE_API, SUBSCRIPTION_API, SUBSCRIPTION_PROVIDERS, TASK_API, TEMPLATE_FAVORITES_API, TEMPLATES_API, UPDATE_API, USAGE_API, isChannelProtocolPreference, isTemplateSourceId, type CanvasAssetRef, type CanvasDocument, type CanvasSkillCatalog, type CanvasSkillConfigApplyRequest, type CanvasSkillConfigApplyResult, type CanvasSkillConfigSaveRequest, type CanvasSkillConfigSaveResult, type CanvasSkillInstallRequest, type CanvasSkillInstallResult, type CanvasSkillLibrary, type CanvasSkillRemoveResult, type CanvasSkillRunRequest, type CanvasSkillTask, type GeneratedImage, type GenerateRequest, type HistoryEntry, type HistoryEntryInput, type ModelMapping, type PresetProviderView, type TemplateFavorite, type TemplateListResult, type TemplateRefreshResult, type TemplateSample } from './protocol.ts'
+import { AGENT_IMAGE_API, CANVAS_API, CANVAS_SKILL_API, CONVERSATION_IMAGE_API, DATA_FOLDER_API, DEFAULT_TEMPLATE_SOURCE_ID, GALLERY_API, GENERATE_API, HISTORY_API, IMAGEGEN_SETTINGS_NAMESPACE, IMAGE_MODEL_API, PRESETS_API, PROMPT_ENHANCE_API, SETTINGS_API, STORAGE_API, SUBSCRIPTION_API, SUBSCRIPTION_PROVIDERS, TASK_API, TEMPLATE_FAVORITES_API, TEMPLATES_API, UPDATE_API, USAGE_API, isChannelProtocolPreference, isTemplateSourceId, VIDEO_API, VIDEO_ASSET_API, VIDEO_HISTORY_API, VIDEO_TASK_API, type CanvasAssetRef, type CanvasDocument, type CanvasSkillCatalog, type CanvasSkillConfigApplyRequest, type CanvasSkillConfigApplyResult, type CanvasSkillConfigSaveRequest, type CanvasSkillConfigSaveResult, type CanvasSkillInstallRequest, type CanvasSkillInstallResult, type CanvasSkillLibrary, type CanvasSkillRemoveResult, type CanvasSkillRunRequest, type CanvasSkillTask, type GeneratedImage, type GenerateRequest, type HistoryEntry, type HistoryEntryInput, type ModelMapping, type PresetProviderView, type TemplateFavorite, type TemplateListResult, type TemplateRefreshResult, type TemplateSample, type VideoGenerateRequest, type VideoScriptAnalyzeRequest, type VideoShot } from './protocol.ts'
+import type { VideoGenerationRuntime } from './video-runtime.ts'
+import { analyzeVideoScript } from './video-script.ts'
+import { clearVideos, listVideos, readVideoRange, readVideoFile, removeVideo, statVideoFile, mimeOfVideoFile, videoFilesDir } from './video-store.ts'
 
 /** Cap on JSON request bodies (settings ops and generate payloads are small). */
 const MAX_JSON_BODY_BYTES = 24 * 1024 * 1024
@@ -140,6 +143,20 @@ export interface ImageGenRoutesDeps {
   resolveStorage?: () => StorageSyncConfig
   /** Shared host queue, used by Agent tools and browser task endpoints. */
   runtime?: ImageGenerationRuntime
+  /** Host video generation queue (Seedance orchestration). Absent on hosts
+   *  without the video feature wired: the video task routes then report it. */
+  videoRuntime?: VideoGenerationRuntime
+  /** Resolve the vision chat model used to parse an editable storyboard. */
+  resolveVideoScript?: () => PromptModelConfig
+  /** Overrideable video backend, primarily for host integration tests. */
+  videos?: {
+    list: () => Promise<Awaited<ReturnType<typeof listVideos>>>
+    remove: (id: string) => Promise<Awaited<ReturnType<typeof removeVideo>>>
+    clear: () => Promise<Awaited<ReturnType<typeof clearVideos>>>
+    readRange: (file: string, start: number, end: number) => Promise<{ data: Buffer; size: number } | undefined>
+    stat: (file: string) => Promise<number | undefined>
+    read: (file: string) => Promise<{ data: Buffer; mime: string } | undefined>
+  }
   /** Subscription login/status manager; absent on hosts without Credentials. */
   subscriptions?: SubscriptionManager
   /**
@@ -466,6 +483,64 @@ function imageDataUrl(value: string): { mediaType: ImageMediaType; data: Uint8Ar
   return data.byteLength === 0 ? undefined : { mediaType: match[1] as ImageMediaType, data }
 }
 
+/** Validate one parsed storyboard shot from the client. */
+function parseVideoShot(value: unknown, index: number): VideoShot | undefined {
+  if (value === null || typeof value !== 'object') return undefined
+  const shot = value as Record<string, unknown>
+  const prompt = typeof shot.prompt === 'string' ? shot.prompt.trim() : ''
+  const text = typeof shot.text === 'string' ? shot.text.trim() : ''
+  if (prompt === '' && text === '') return undefined
+  const referenceUrls = Array.isArray(shot.referenceUrls)
+    ? shot.referenceUrls.filter((url): url is string => typeof url === 'string' && url.trim() !== '').map(url => url.trim()).slice(0, 8)
+    : []
+  const duration = typeof shot.duration === 'number' && shot.duration > 0 ? Math.min(30, Math.round(shot.duration)) : 0
+  const ratio = typeof shot.ratio === 'string' ? shot.ratio.trim() : ''
+  return { index, text, prompt, referenceUrls, duration, ratio }
+}
+
+/** Validate the { request } body of a video task submit. */
+function parseVideoGenerateRequest(body: Record<string, unknown> | undefined): VideoGenerateRequest | undefined {
+  if (body === undefined) return undefined
+  const rawShots = Array.isArray(body.shots) ? body.shots : []
+  const shots: VideoShot[] = []
+  for (const item of rawShots) {
+    const shot = parseVideoShot(item, shots.length)
+    if (shot !== undefined) shots.push(shot)
+  }
+  if (shots.length === 0) return undefined
+  return {
+    shots,
+    model: typeof body.model === 'string' ? body.model.trim() : '',
+    ratio: typeof body.ratio === 'string' && body.ratio !== '' ? body.ratio : '16:9',
+    resolution: typeof body.resolution === 'string' && body.resolution !== '' ? body.resolution : '720p',
+    duration: typeof body.duration === 'number' && body.duration > 0 ? Math.min(30, Math.round(body.duration)) : 5,
+    generateAudio: body.generateAudio === true,
+    watermark: body.watermark === true,
+    ...typeof body.title === 'string' && body.title !== '' ? { title: body.title } : {},
+    ...typeof body.narrative === 'string' && body.narrative !== '' ? { narrative: body.narrative } : {},
+    ...typeof body.channelId === 'string' && body.channelId !== '' ? { channelId: body.channelId } : {},
+  }
+}
+
+/** Validate the body of a video storyboard analyze request. */
+function parseVideoAnalyzeRequest(body: Record<string, unknown> | undefined): VideoScriptAnalyzeRequest | undefined {
+  if (body === undefined) return undefined
+  const frames = Array.isArray(body.frames)
+    ? body.frames.filter((item): item is string => typeof item === 'string' && item.startsWith('data:')).slice(0, 24)
+    : []
+  const images = Array.isArray(body.images)
+    ? body.images.filter((item): item is string => typeof item === 'string' && item.startsWith('data:')).slice(0, 12)
+    : []
+  const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
+  if (frames.length === 0 && images.length === 0 && prompt === '') return undefined
+  return {
+    frames,
+    images,
+    prompt,
+    ...typeof body.instruction === 'string' && body.instruction.trim() !== '' ? { instruction: body.instruction.trim() } : {},
+  }
+}
+
 /** Project one settings descriptor onto the bridge wire view. */
 function toView(descriptor: SettingsDescriptor, namespace = String(descriptor.ns)): Record<string, unknown> {
   return {
@@ -532,6 +607,15 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
     remove: removeTemplateFavorite,
   }
   const resolvePrompt = deps.resolvePrompt ?? (() => ({ apiUrl: '', apiKey: '', model: '' }))
+  const resolveVideoScript = deps.resolveVideoScript ?? resolvePrompt
+  const videos: NonNullable<ImageGenRoutesDeps['videos']> = deps.videos ?? {
+    list: listVideos,
+    remove: removeVideo,
+    clear: clearVideos,
+    readRange: readVideoRange,
+    stat: statVideoFile,
+    read: readVideoFile,
+  }
   const resolveImageModels = deps.resolveImageModels ?? (() => normalizeImageModels(undefined))
   const settingsNamespace = deps.settingsNamespace ?? IMAGEGEN_SETTINGS_NAMESPACE
 
@@ -1842,7 +1926,13 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
       handler: async (req, res) => {
         if (!guard(req, res, 'POST')) return
         const body = await readJsonBody(req)
-        const dir = path.join(homedir(), '.dsh', 'dsh-imagegen')
+        // `target: 'videos'` reveals the (possibly custom) video library root;
+        // otherwise the general data directory. Both return their absolute path
+        // so the panel can show it, and open the OS file manager unless asked
+        // not to (`open: false`, used by tests and the path-display call).
+        const dir = body?.target === 'videos'
+          ? videoFilesDir()
+          : path.join(homedir(), '.dsh', 'dsh-imagegen')
         try {
           await fsMkdir(dir, { recursive: true })
         } catch { /* reveal still works when the directory already exists */ }
@@ -1882,6 +1972,222 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
         } catch (error) {
           writeJson(res, 200, { ok: false, code: 'storage-test-failed', message: messageOf(error) })
         }
+      },
+    },
+    // ------------------------------------------------- video: parse script
+    {
+      kind: 'exact',
+      path: VIDEO_API.analyze,
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        const body = await readJsonBody(req, MAX_HISTORY_BODY_BYTES)
+        const request = parseVideoAnalyzeRequest(body)
+        if (request === undefined) {
+          writeJson(res, 200, { ok: false, code: 'bad-request', message: '视频解析请求缺少有效的素材或提示词' })
+          return
+        }
+        try {
+          const script = await analyzeVideoScript(resolveVideoScript(), request)
+          writeJson(res, 200, { ok: true, script })
+        } catch (error) {
+          writeJson(res, 200, { ok: false, code: 'video-analyze-failed', message: messageOf(error) })
+        }
+      },
+    },
+    // -------------------------------------- video: publish reference asset
+    {
+      kind: 'exact',
+      path: VIDEO_ASSET_API.publish,
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        const body = await readJsonBody(req, MAX_HISTORY_BODY_BYTES)
+        const dataUrl = typeof body?.dataUrl === 'string' ? body.dataUrl : ''
+        const parsed = imageDataUrl(dataUrl)
+        if (parsed === undefined) {
+          writeJson(res, 200, { ok: false, code: 'bad-request', message: '素材发布需要一个有效的图片 data URL' })
+          return
+        }
+        const storage = deps.resolveStorage?.()
+        if (storage === undefined || storage.endpoint.trim() === '') {
+          writeJson(res, 200, { ok: false, code: 'video-asset-unavailable', message: '未配置对象存储：图生视频/视频参考需要公网素材 URL，请在设置中配置对象存储，或直接粘贴图片直链' })
+          return
+        }
+        try {
+          const name = typeof body?.name === 'string' && body.name.trim() !== '' ? safeFileName(body.name.trim()) : 'reference.png'
+          const key = `${storage.prefix.trim() || 'dsh-imagegen'}/video-assets/${randomUUID()}-${name}`
+          await putObject(storage, key, Buffer.from(parsed.data), parsed.mediaType)
+          const base = storage.endpoint.trim().replace(/\/+$/, '')
+          const url = `${base}/${key.split('/').map(part => encodeURIComponent(part)).join('/')}`
+          writeJson(res, 200, { ok: true, url })
+        } catch (error) {
+          writeJson(res, 200, { ok: false, code: 'video-asset-failed', message: messageOf(error) })
+        }
+      },
+    },
+    // ---------------------------------------------- video: task submit
+    {
+      kind: 'exact',
+      path: VIDEO_TASK_API.submit,
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        if (deps.videoRuntime === undefined) {
+          writeJson(res, 200, { ok: false, code: 'video-unavailable', message: '视频生成功能未启用' })
+          return
+        }
+        const body = await readJsonBody(req, MAX_HISTORY_BODY_BYTES)
+        const request = parseVideoGenerateRequest(body)
+        if (request === undefined) {
+          writeJson(res, 200, { ok: false, code: 'bad-request', message: '视频任务请求缺少有效的分镜' })
+          return
+        }
+        try {
+          writeJson(res, 200, { ok: true, task: deps.videoRuntime.submit(request) })
+        } catch (error) {
+          writeJson(res, 200, { ok: false, code: 'video-submit-failed', message: messageOf(error) })
+        }
+      },
+    },
+    // ------------------------------------------------ video: task list
+    {
+      kind: 'exact',
+      path: VIDEO_TASK_API.list,
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        if (deps.videoRuntime === undefined) { writeJson(res, 200, { ok: true, tasks: [] }); return }
+        writeJson(res, 200, { ok: true, tasks: deps.videoRuntime.summaries() })
+      },
+    },
+    // ------------------------------------------------- video: task get
+    {
+      kind: 'exact',
+      path: VIDEO_TASK_API.get,
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        if (deps.videoRuntime === undefined) { writeJson(res, 200, { ok: false, code: 'video-unavailable', message: '视频生成功能未启用' }); return }
+        const body = await readJsonBody(req)
+        const id = typeof body?.id === 'string' ? body.id : ''
+        const task = id === '' ? undefined : deps.videoRuntime.get(id)
+        if (task === undefined) writeJson(res, 200, { ok: false, code: 'not-found', message: '视频任务不存在' })
+        else writeJson(res, 200, { ok: true, task })
+      },
+    },
+    // ---------------------------------------------- video: task cancel
+    {
+      kind: 'exact',
+      path: VIDEO_TASK_API.cancel,
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        if (deps.videoRuntime === undefined) { writeJson(res, 200, { ok: false, code: 'video-unavailable', message: '视频生成功能未启用' }); return }
+        const body = await readJsonBody(req)
+        const id = typeof body?.id === 'string' ? body.id : ''
+        const task = id === '' ? undefined : deps.videoRuntime.cancel(id)
+        if (task === undefined) writeJson(res, 200, { ok: false, code: 'not-found', message: '视频任务不存在' })
+        else writeJson(res, 200, { ok: true, task })
+      },
+    },
+    // ----------------------------------------------- video: task retry
+    {
+      kind: 'exact',
+      path: VIDEO_TASK_API.retry,
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        if (deps.videoRuntime === undefined) { writeJson(res, 200, { ok: false, code: 'video-unavailable', message: '视频生成功能未启用' }); return }
+        const body = await readJsonBody(req)
+        const id = typeof body?.id === 'string' ? body.id : ''
+        const task = id === '' ? undefined : deps.videoRuntime.retry(id)
+        if (task === undefined) writeJson(res, 200, { ok: false, code: 'not-found', message: '视频任务不存在' })
+        else writeJson(res, 200, { ok: true, task })
+      },
+    },
+    // -------------------------------------------- video: history list
+    {
+      kind: 'exact',
+      path: VIDEO_HISTORY_API.list,
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        try { writeJson(res, 200, { ok: true, entries: await videos.list() }) }
+        catch (error) { writeJson(res, 200, { ok: false, code: 'video-history-failed', message: messageOf(error) }) }
+      },
+    },
+    // ------------------------------------------- video: history remove
+    {
+      kind: 'exact',
+      path: VIDEO_HISTORY_API.remove,
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        const body = await readJsonBody(req)
+        const id = typeof body?.id === 'string' ? body.id : ''
+        if (id === '') { writeJson(res, 200, { ok: false, code: 'bad-request', message: '视频记录 id 必填' }); return }
+        try { writeJson(res, 200, { ok: true, entries: await videos.remove(id) }) }
+        catch (error) { writeJson(res, 200, { ok: false, code: 'video-history-failed', message: messageOf(error) }) }
+      },
+    },
+    // -------------------------------------------- video: history clear
+    {
+      kind: 'exact',
+      path: VIDEO_HISTORY_API.clear,
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        try { writeJson(res, 200, { ok: true, entries: await videos.clear() }) }
+        catch (error) { writeJson(res, 200, { ok: false, code: 'video-history-failed', message: messageOf(error) }) }
+      },
+    },
+    // ------------------------------------- video: retry-concat a partial
+    // Concatenate an already-downloaded (partial) entry's clips into a finished
+    // cut without re-calling the upstream. Lives on the runtime, which owns
+    // ffmpeg; hosts without it report the feature as unavailable.
+    {
+      kind: 'exact',
+      path: VIDEO_HISTORY_API.concat,
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        if (deps.videoRuntime === undefined) { writeJson(res, 200, { ok: false, code: 'video-unavailable', message: '视频生成功能未启用' }); return }
+        const body = await readJsonBody(req)
+        const id = typeof body?.id === 'string' ? body.id : ''
+        if (id === '') { writeJson(res, 200, { ok: false, code: 'bad-request', message: '视频记录 id 必填' }); return }
+        try { writeJson(res, 200, { ok: true, entries: await deps.videoRuntime.concatStored(id) }) }
+        catch (error) { writeJson(res, 200, { ok: false, code: 'video-concat-failed', message: messageOf(error) }) }
+      },
+    },
+    // ------------------------------------- video file (prefix, byte-range)
+    {
+      kind: 'prefix',
+      path: VIDEO_HISTORY_API.file,
+      handler: async (req, res) => {
+        if (!isLoopbackRequest(req)) { writeJson(res, 403, { error: 'forbidden: loopback-only' }); return }
+        if (req.method !== 'GET') { writeJson(res, 405, { error: `method not allowed: ${req.method}` }); return }
+        const file = imageFileFrom(req.url, VIDEO_HISTORY_API.file)
+        if (file === undefined) { writeJson(res, 404, { error: 'not found' }); return }
+        const size = await videos.stat(file)
+        if (size === undefined) { writeJson(res, 404, { error: 'not found' }); return }
+        const mime = mimeOfVideoFile(file)
+        const range = parseByteRange(req.headers.range, size)
+        if (range === undefined) {
+          // No (or unsatisfiable) range: serve the whole file inline so the
+          // <video> element can still play; advertise range support.
+          const full = await videos.read(file)
+          if (full === undefined) { writeJson(res, 404, { error: 'not found' }); return }
+          res.writeHead(200, {
+            'content-type': mime,
+            'content-length': full.data.length,
+            'accept-ranges': 'bytes',
+            'content-disposition': `inline; filename="${path.basename(file)}"`,
+            'cache-control': 'private, max-age=3600',
+          })
+          res.end(full.data)
+          return
+        }
+        const slice = await videos.readRange(file, range.start, range.end)
+        if (slice === undefined) { writeJson(res, 404, { error: 'not found' }); return }
+        res.writeHead(206, {
+          'content-type': mime,
+          'content-length': slice.data.length,
+          'content-range': `bytes ${range.start}-${range.end}/${slice.size}`,
+          'accept-ranges': 'bytes',
+          'content-disposition': `inline; filename="${path.basename(file)}"`,
+          'cache-control': 'private, max-age=3600',
+        })
+        res.end(slice.data)
       },
     },
   ]

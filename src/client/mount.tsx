@@ -18,8 +18,9 @@
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import { createRoot, type Root } from 'react-dom/client'
 import type { ImageGenApi } from './api.ts'
-import type { ImageGenController } from './controller.ts'
+import type { ImageGenController, ImageGenView } from './controller.ts'
 import { ImageGenPanel } from './ImageGenPanel.tsx'
+import { VideoPanel } from './VideoPanel.tsx'
 import type { ImageGenScope } from './settings-scope.ts'
 import type { ConversationService } from './conversation-sync.ts'
 import css from './panel.module.css'
@@ -137,9 +138,12 @@ export function mountPanel(
   let container: HTMLDivElement | undefined
   let resizer: HTMLDivElement | undefined
   let panelActive = false
+  let activeView: ImageGenView = 'session'
 
   const renderPanel = (): void => {
-    root?.render(<ImageGenPanel api={api} scope={scope} active={panelActive} {...services} />)
+    root?.render(activeView === 'video'
+      ? <VideoPanel api={api} scope={scope} active={panelActive} />
+      : <ImageGenPanel api={api} scope={scope} active={panelActive} {...services} />)
   }
 
   const ensure = (): void => {
@@ -170,7 +174,9 @@ export function mountPanel(
   waitObserver.observe(document.body, { childList: true, subtree: true })
 
   const applyActive = (): void => {
-    panelActive = controller.getSnapshot().panelOpen
+    const snapshot = controller.getSnapshot()
+    panelActive = snapshot.panelOpen
+    activeView = snapshot.activeView
     if (panelActive) {
       // Single-occupant center column: opening this panel must evict sibling
       // panels (task board / ssh), both their html attributes and their

@@ -12,7 +12,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { HISTORY_MAX, type GenerateMode, type HistoryEntry, type HistoryEntryInput } from './protocol.ts'
 import { notifyImageSaved } from './storage-sync.ts'
-import { imageDataRoot } from './image-storage-path.ts'
+import { imageDataRoot, isStoredImageRelPath, stampedImageRelPath } from './image-storage-path.ts'
 
 function historyDir(): string { return imageDataRoot() }
 function indexPath(): string { return path.join(historyDir(), 'index.json') }
@@ -190,14 +190,15 @@ export async function listHistory(): Promise<HistoryEntry[]> {
 export async function appendHistory(input: HistoryEntryInput): Promise<HistoryEntry[]> {
   return mutateHistory(async () => {
     await ensureDirs()
-    const prefix = safeId(input.id)
     const storedImages: StoredImage[] = []
     try {
       for (let index = 0; index < input.images.length; index++) {
         const image = input.images[index]!
-        const file = `${prefix}-${index}.${extensionOf(image.mime)}`
-        await fs.writeFile(path.join(imagesDir(), file), Buffer.from(image.b64, 'base64'))
-        notifyImageSaved('history', path.join(imagesDir(), file))
+        const file = await stampedImageRelPath(imagesDir(), input.createdAt, index, image)
+        const abs = path.join(imagesDir(), file)
+        await fs.mkdir(path.dirname(abs), { recursive: true })
+        await fs.writeFile(abs, Buffer.from(image.b64, 'base64'))
+        notifyImageSaved('history', abs, file)
         storedImages.push({
           file,
           mime: image.mime,
@@ -263,9 +264,10 @@ export async function clearHistory(): Promise<HistoryEntry[]> {
 
 /** Read one stored image file by its (validated) file name. */
 export async function readHistoryImage(file: string): Promise<{ data: Buffer; mime: string } | undefined> {
-  // Only accept <id>-<index>.<png|jpg|jpeg|webp|gif> — the exact names this
-  // store writes — so the route can never escape the images directory.
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9-]*-[0-9]+\.(png|jpg|jpeg|webp|gif)$/.test(file)) return undefined
+  // Accept both the legacy flat `<id>-<index>.<ext>` and the current
+  // `<YYYY-MM-DD>/<time>-<index>.<ext>` subpaths, and nothing else, so the
+  // route can never escape the images directory.
+  if (!isStoredImageRelPath(file)) return undefined
   try {
     const data = await fs.readFile(path.join(imagesDir(), file))
     return { data, mime: mimeOfFile(file) }

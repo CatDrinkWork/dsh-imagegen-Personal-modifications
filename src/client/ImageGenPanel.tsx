@@ -2119,7 +2119,7 @@ export function ImageGenPanel(props: {
           <h2 className={css.panelTitle}>{tt('panel.title')}</h2>
           <a
             className={css.githubLink}
-            href="https://github.com/dickpy/dsh-imagegen"
+            href="https://github.com/CatDrinkWork/dsh-imagegen-Personal-modifications"
             target="_blank"
             rel="noreferrer"
             title={tt('panel.githubTip')}

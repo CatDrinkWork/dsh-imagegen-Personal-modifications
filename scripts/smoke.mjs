@@ -3372,11 +3372,13 @@ await check('D3 sidebar entry mounts inside desktop and unknown sidebar shells, 
 
   const calls = []
   const listeners = new Set()
-  let panelOpen = false
+  let activeView = 'session'
   const controller = {
-    getSnapshot: () => ({ panelOpen }),
-    open: () => { calls.push('open') },
-    close: () => { calls.push('close') },
+    getSnapshot: () => ({ panelOpen: activeView !== 'session', activeView }),
+    open: () => { calls.push('open'); activeView = 'image' },
+    openImage: () => { calls.push('open'); activeView = 'image' },
+    openVideo: () => { calls.push('open'); activeView = 'video' },
+    close: () => { calls.push('close'); activeView = 'session' },
     subscribe: (fn) => { listeners.add(fn); return () => { listeners.delete(fn) } },
   }
 
@@ -3384,14 +3386,14 @@ await check('D3 sidebar entry mounts inside desktop and unknown sidebar shells, 
   // and the brand row on the same ancestor must stay untouched.
   const desktopRoot = findSidebarRoot()
   assert.equal(desktopRoot?.className, 'xUkysG_root', 'the desktop sidebar surface resolves to the wrapper that owns the shell button')
-  const disposeDesktop = mount(controller, 'Session', 'Back to the current conversation', 'Image', 'Open the image studio')
+  const disposeDesktop = mount(controller, 'Session', 'Back to the current conversation', 'Image', 'Open the image studio', 'Video', 'Open the video studio')
   const tabs = jsdomDocument.querySelector('[data-dsh-imagegen-session-tabs]')
-  assert.ok(tabs !== null, 'the two tabs mount in the desktop shell')
+  assert.ok(tabs !== null, 'the three tabs mount in the desktop shell')
   assert.equal(tabs.parentElement.className, 'xUkysG_root', 'the tabs land where the shell button sits')
   assert.equal(tabs.getAttribute('role'), 'tablist')
   assert.deepEqual(
     [...tabs.querySelectorAll('[data-dsh-imagegen-tab]')].map(tab => tab.getAttribute('data-dsh-imagegen-tab')),
-    ['session', 'image'],
+    ['session', 'image', 'video'],
   )
   const shellButton = jsdomDocument.querySelector('.xUkysG_newSession')
   assert.equal(shellButton.style.display, '', 'the shell New Session button stays visible: the switcher only moves between the conversation and the studio')
@@ -3411,7 +3413,7 @@ await check('D3 sidebar entry mounts inside desktop and unknown sidebar shells, 
   tabs.querySelector('[data-dsh-imagegen-tab="image"]').dispatchEvent(new jsdomWindow.MouseEvent('click', { bubbles: true }))
   tabs.querySelector('[data-dsh-imagegen-tab="session"]').dispatchEvent(new jsdomWindow.MouseEvent('click', { bubbles: true }))
   assert.equal(calls.join(','), 'open,close', 'the image tab opens the studio and the session tab returns to the conversation without starting one')
-  panelOpen = true
+  activeView = 'image'
   for (const listener of [...listeners]) listener()
   assert.equal(tabs.querySelector('[data-dsh-imagegen-tab="image"]').hasAttribute('data-active'), true, 'the open panel marks the image tab')
   assert.equal(tabs.querySelector('[data-dsh-imagegen-tab="session"]').hasAttribute('data-active'), false)
@@ -3441,7 +3443,7 @@ await check('D3 sidebar entry mounts inside desktop and unknown sidebar shells, 
     + '</div>'
   const unknownRoot = findSidebarRoot()
   assert.equal(unknownRoot?.className, 'zzzShell', 'a shell without our markers resolves through the brand row and the button name')
-  const disposeUnknown = mount(controller, 'Session', 'Back to the current conversation', 'Image', 'Open the image studio')
+  const disposeUnknown = mount(controller, 'Session', 'Back to the current conversation', 'Image', 'Open the image studio', 'Video', 'Open the video studio')
   const unknownTabs = jsdomDocument.querySelector('[data-dsh-imagegen-session-tabs]')
   assert.ok(unknownTabs !== null, 'the tabs mount in a shell we have never seen')
   assert.equal(unknownTabs.parentElement.className, 'zzzShell')
@@ -3482,7 +3484,7 @@ await check('D3 sidebar entry mounts inside desktop and unknown sidebar shells, 
     + '<div class="logoRow"><button class="brandButton" aria-label="Collapse sidebar">SESSION-TITLE-MUST-NOT-BE-LOGGED</button></div>'
     + '<div class="regionArea"></div>'
     + '</div>'
-  const disposeUnmounted = mount(controller, 'Session', 'Back to the current conversation', 'Image', 'Open the image studio')
+  const disposeUnmounted = mount(controller, 'Session', 'Back to the current conversation', 'Image', 'Open the image studio', 'Video', 'Open the video studio')
   assert.equal(jsdomDocument.querySelector('[data-dsh-imagegen-session-tabs]'), null, 'no tabs mount without a shell button to replace')
   assert.equal(jsdomDocument.querySelector('[data-dsh-imagegen-history-host]'), null, 'no history host mounts either')
   assert.equal(jsdomDocument.querySelector('.brandButton').style.display, '', 'the brand button is not mistaken for the new-session control')

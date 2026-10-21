@@ -3,7 +3,7 @@
  * data access path the panel uses — plain fetch, same origin.
  */
 
-import { CANVAS_API, CANVAS_SKILL_API, CONVERSATION_IMAGE_API, DATA_FOLDER_API, GALLERY_API, GENERATE_API, HISTORY_API, PROMPT_ENHANCE_API, STORAGE_API, TASK_API, TEMPLATE_FAVORITES_API, TEMPLATES_API, UPDATE_API, type CanvasAssetRef, type CanvasDocument, type CanvasFilePreview, type CanvasLayerPlan, type CanvasSkillCatalog, type CanvasSkillConfigApplyRequest, type CanvasSkillConfigApplyResult, type CanvasSkillConfigSaveRequest, type CanvasSkillConfigSaveResult, type CanvasSkillInstallRequest, type CanvasSkillInstallResult, type CanvasSkillLibrary, type CanvasSkillRemoveResult, type CanvasSkillRunRequest, type CanvasSkillTask, type CanvasSummary, type GenerateRequest, type GenerateResult, type GenerationTask, type GenerationTaskSummary, type HistoryEntry, type HistoryEntryInput, type TemplateCase, type TemplateFavorite, type TemplateListResult, type TemplateRefreshResult, type TemplateSample, type UpdateInfo } from '../protocol.ts'
+import { CANVAS_API, CANVAS_SKILL_API, CONVERSATION_IMAGE_API, DATA_FOLDER_API, GALLERY_API, GENERATE_API, HISTORY_API, PROMPT_ENHANCE_API, STORAGE_API, TASK_API, TEMPLATE_FAVORITES_API, TEMPLATES_API, UPDATE_API, VIDEO_API, VIDEO_ASSET_API, VIDEO_HISTORY_API, VIDEO_TASK_API, type CanvasAssetRef, type CanvasDocument, type CanvasFilePreview, type CanvasLayerPlan, type CanvasSkillCatalog, type CanvasSkillConfigApplyRequest, type CanvasSkillConfigApplyResult, type CanvasSkillConfigSaveRequest, type CanvasSkillConfigSaveResult, type CanvasSkillInstallRequest, type CanvasSkillInstallResult, type CanvasSkillLibrary, type CanvasSkillRemoveResult, type CanvasSkillRunRequest, type CanvasSkillTask, type CanvasSummary, type GenerateRequest, type GenerateResult, type GenerationTask, type GenerationTaskSummary, type HistoryEntry, type HistoryEntryInput, type TemplateCase, type TemplateFavorite, type TemplateListResult, type TemplateRefreshResult, type TemplateSample, type UpdateInfo, type VideoGenerateRequest, type VideoHistoryEntry, type VideoScript, type VideoScriptAnalyzeRequest, type VideoTask } from '../protocol.ts'
 import { activeImageGenLanguage } from './helpers.ts'
 
 /** Error carrying the route's JSON error message. */
@@ -443,5 +443,115 @@ export class ImageGenApi {
       body: JSON.stringify({ key }),
     })
     return (await readEnvelope<{ ok: true; favorites: TemplateFavorite[] }>(response)).favorites
+  }
+
+  /** Ask the host's vision model to parse uploaded material into an editable storyboard. */
+  async videoAnalyze(request: VideoScriptAnalyzeRequest): Promise<VideoScript> {
+    const response = await fetch(VIDEO_API.analyze, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
+    })
+    return (await readEnvelope<{ ok: true; script: VideoScript }>(response)).script
+  }
+
+  /** Publish one image/frame data URL to object storage and get back a public URL. */
+  async videoAssetPublish(dataUrl: string, name?: string): Promise<string> {
+    const response = await fetch(VIDEO_ASSET_API.publish, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dataUrl, name }),
+    })
+    return (await readEnvelope<{ ok: true; url: string }>(response)).url
+  }
+
+  /** Submit one finished-cut video task (per-shot generation + ffmpeg concat). */
+  async videoTaskSubmit(request: VideoGenerateRequest): Promise<VideoTask> {
+    const response = await fetch(VIDEO_TASK_API.submit, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
+    })
+    return (await readEnvelope<{ ok: true; task: VideoTask }>(response)).task
+  }
+
+  /** List the host's video tasks (active first, then recent terminal ones). */
+  async videoTaskList(): Promise<VideoTask[]> {
+    const response = await fetch(VIDEO_TASK_API.list, { method: 'POST' })
+    return (await readEnvelope<{ ok: true; tasks: VideoTask[] }>(response)).tasks
+  }
+
+  /** Fetch one video task with its per-shot progress and results. */
+  async videoTaskGet(id: string): Promise<VideoTask> {
+    const response = await fetch(VIDEO_TASK_API.get, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    return (await readEnvelope<{ ok: true; task: VideoTask }>(response)).task
+  }
+
+  /** Ask the host to cancel a queued or running video task. */
+  async videoTaskCancel(id: string): Promise<VideoTask> {
+    const response = await fetch(VIDEO_TASK_API.cancel, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    return (await readEnvelope<{ ok: true; task: VideoTask }>(response)).task
+  }
+
+  /** Re-run the shots of a failed or cancelled video task. */
+  async videoTaskRetry(id: string): Promise<VideoTask> {
+    const response = await fetch(VIDEO_TASK_API.retry, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    return (await readEnvelope<{ ok: true; task: VideoTask }>(response)).task
+  }
+
+  /** List the host-persisted video library (newest first). */
+  async videoHistoryList(): Promise<VideoHistoryEntry[]> {
+    const response = await fetch(VIDEO_HISTORY_API.list, { method: 'POST' })
+    return (await readEnvelope<{ ok: true; entries: VideoHistoryEntry[] }>(response)).entries
+  }
+
+  /** Remove one video history entry by id. */
+  async videoHistoryRemove(id: string): Promise<VideoHistoryEntry[]> {
+    const response = await fetch(VIDEO_HISTORY_API.remove, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    return (await readEnvelope<{ ok: true; entries: VideoHistoryEntry[] }>(response)).entries
+  }
+
+  /** Clear the entire video library. */
+  async videoHistoryClear(): Promise<VideoHistoryEntry[]> {
+    const response = await fetch(VIDEO_HISTORY_API.clear, { method: 'POST' })
+    return (await readEnvelope<{ ok: true; entries: VideoHistoryEntry[] }>(response)).entries
+  }
+
+  /** Concatenate a partial entry's already-downloaded clips without re-paying. */
+  async videoHistoryConcat(id: string): Promise<VideoHistoryEntry[]> {
+    const response = await fetch(VIDEO_HISTORY_API.concat, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    return (await readEnvelope<{ ok: true; entries: VideoHistoryEntry[] }>(response)).entries
+  }
+
+  /** Resolve the absolute video library directory (without opening it). */
+  async getVideoFolder(): Promise<{ ok: boolean; path?: string; message?: string }> {
+    const response = await fetch(DATA_FOLDER_API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'videos', open: false }) })
+    return await readEnvelope<{ ok: true; path: string }>(response)
+  }
+
+  /** Reveal the video library directory in the OS file manager. */
+  async openVideoFolder(): Promise<{ ok: boolean; path?: string; message?: string }> {
+    const response = await fetch(DATA_FOLDER_API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'videos' }) })
+    return await readEnvelope<{ ok: true; path: string }>(response)
   }
 }

@@ -1,0 +1,658 @@
+/**
+ * Video workbench styling. Mirrors the image studio's three-column look and
+ * rides the same --dsw-alias-* theme tokens, so the video panel matches the DSH
+ * shell in both light and dark surfaces. Scoped box-sizing reset matches
+ * panel.module.css (the shell ships none).
+ */
+
+.panel,
+.panel *,
+.panel *::before,
+.panel *::after {
+  box-sizing: border-box;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 14px 16px 16px;
+  gap: 10px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-family);
+}
+
+/* --- header ---------------------------------------------------------------- */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-label-error);
+  border-radius: 8px;
+  color: var(--dsw-alias-label-error);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.status[data-ok='true'] {
+  border-color: var(--dsw-alias-state-success-primary);
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* --- three columns --------------------------------------------------------- */
+.columns {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 280px;
+  gap: 14px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.config,
+.workspace,
+.history {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.config,
+.history {
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+/* --- config column --------------------------------------------------------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--dsw-alias-state-success-primary);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 4px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chip[data-active='true'] {
+  border-color: var(--dsw-alias-state-success-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.switch input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--dsw-alias-state-success-primary);
+}
+
+/* --- workspace blocks ------------------------------------------------------ */
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-state-warn-primary);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 10%, transparent);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.blockHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stepBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-success-primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.uploadRow {
+  display: flex;
+  gap: 8px;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: var(--dsw-alias-state-success-primary);
+}
+
+.blockActions {
+  display: flex;
+  gap: 8px;
+}
+
+/* --- material lists -------------------------------------------------------- */
+.clipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.clipChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  padding: 3px 6px 3px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 12px;
+}
+
+.clipRemove {
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.clipRemove:hover {
+  color: var(--dsw-alias-label-error);
+}
+
+.imageGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+}
+
+.imageCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.imageCard img,
+.imagePlaceholder {
+  width: 100%;
+  height: 68px;
+  object-fit: cover;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.imageActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 6px;
+}
+
+/* --- storyboard shots ------------------------------------------------------ */
+.shotCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.shotHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shotIndex {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.shotBtn {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.shotBtn:hover:not(:disabled) {
+  border-color: var(--dsw-alias-state-success-primary);
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.shotBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.shotParams {
+  display: flex;
+  gap: 12px;
+}
+
+.miniField {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.miniField input {
+  width: 64px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.refChips,
+.refPool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.refChip {
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-state-success-primary);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
+  color: var(--dsw-alias-state-success-primary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.refPoolItem {
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.refPoolItem[data-on='true'] {
+  border-color: var(--dsw-alias-state-success-primary);
+  color: var(--dsw-alias-state-success-primary);
+}
+
+/* --- task progress + result ------------------------------------------------ */
+.error {
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-label-error);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--dsw-alias-label-error) 8%, transparent);
+  color: var(--dsw-alias-label-error);
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.progressHead {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.progressTrack {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--dsw-alias-state-success-primary);
+  transition: width 0.3s ease;
+}
+
+.shotStatusList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.shotStatus {
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.shotStatus[data-status='completed'] {
+  border-color: var(--dsw-alias-state-success-primary);
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.shotStatus[data-status='failed'],
+.shotStatus[data-status='cancelled'] {
+  border-color: var(--dsw-alias-label-error);
+  color: var(--dsw-alias-label-error);
+}
+
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.player {
+  width: 100%;
+  max-height: 60vh;
+  border-radius: 10px;
+  background: #000;
+}
+
+.resultActions {
+  display: flex;
+  gap: 8px;
+}
+
+.download {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-state-success-primary);
+  border-radius: 8px;
+  color: var(--dsw-alias-state-success-primary);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.download:hover {
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
+}
+
+/* --- history column -------------------------------------------------------- */
+.historyHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.historyClear {
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.historyClear:hover:not(:disabled) {
+  color: var(--dsw-alias-label-error);
+}
+
+.historyClear:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.historyList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.historyItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.historyPoster,
+.historyPosterEmpty,
+.historyPreview {
+  width: 100%;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.historyPoster,
+.historyPosterEmpty {
+  height: 120px;
+  object-fit: cover;
+}
+
+.historyPosterEmpty {
+  border: 1px dashed var(--dsw-alias-border-l2);
+}
+
+.historyMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.historyMeta strong {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.historyMeta small {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.historyPartial {
+  color: var(--dsw-alias-state-warning-primary);
+}
+
+.historyActions {
+  display: flex;
+  gap: 8px;
+}
+
+.historyBtn {
+  padding: 3px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.historyBtn:hover {
+  border-color: var(--dsw-alias-state-success-primary);
+  color: var(--dsw-alias-state-success-primary);
+}
+
+/* --- responsive ----------------------------------------------------------- */
+/* The workbench shares the center column with the chat (resizer-driven), so
+   its width tracks the panel, not the viewport. Container queries reflow the
+   three columns by the panel's own width and keep the workspace from
+   collapsing into a vertical sliver; history drops below rather than hiding. */
+@container (max-width: 900px) {
+  .columns {
+    grid-template-columns: 200px minmax(0, 1fr) 240px;
+  }
+}
+
+@container (max-width: 680px) {
+  .columns {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .config,
+  .workspace,
+  .history {
+    /* Keep natural height in the stacked column; never shrink. Without this a
+       tall storyboard compresses its flex box below its content and, since
+       overflow is visible, spills over the history block below it. */
+    flex: none;
+    overflow: visible;
+  }
+
+  .config {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+
+  .config .field {
+    flex: 1 1 150px;
+  }
+
+  .config .switch {
+    flex: 0 0 auto;
+  }
+}

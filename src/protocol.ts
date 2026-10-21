@@ -194,6 +194,49 @@ export const CANVAS_SKILL_API = {
   configApply: '/api/dsh-imagegen/canvas/skills/config/apply',
 } as const
 
+/**
+ * Same-origin route family for the video workbench's multimodal script parse:
+ * the browser samples uploaded videos into frames and hands those + stills to
+ * the host, which runs a vision chat completion and returns an editable
+ * storyboard (see {@link VideoScript}).
+ */
+export const VIDEO_API = {
+  analyze: '/api/dsh-imagegen/video/analyze',
+} as const
+
+/** Publish an image/frame data URL to object storage so Ark video reference
+ *  material becomes a public URL (Seedance rejects inline base64 references). */
+export const VIDEO_ASSET_API = {
+  publish: '/api/dsh-imagegen/video/asset/publish',
+} as const
+
+/** Host-resident video generation queue endpoints (async Seedance tasks). */
+export const VIDEO_TASK_API = {
+  submit: '/api/dsh-imagegen/video/tasks/submit',
+  list: '/api/dsh-imagegen/video/tasks/list',
+  get: '/api/dsh-imagegen/video/tasks/get',
+  cancel: '/api/dsh-imagegen/video/tasks/cancel',
+  retry: '/api/dsh-imagegen/video/tasks/retry',
+} as const
+
+/**
+ * Same-origin route family for the persisted video library. Finished clips and
+ * their per-shot files live under ~/.dsh/dsh-imagegen/videos/ and are served
+ * back through the `file` prefix route with byte-range support so the browser
+ * can inline-play the mp4 without loading the whole file.
+ */
+export const VIDEO_HISTORY_API = {
+  list: '/api/dsh-imagegen/video/history/list',
+  remove: '/api/dsh-imagegen/video/history/remove',
+  clear: '/api/dsh-imagegen/video/history/clear',
+  /** Concatenate an already-downloaded partial entry's clips into a finished cut. */
+  concat: '/api/dsh-imagegen/video/history/concat',
+  file: '/api/dsh-imagegen/video/history/file',
+} as const
+
+/** Maximum number of video history entries retained host-side. */
+export const VIDEO_HISTORY_MAX = 50
+
 /** Maximum number of history entries retained host-side (oldest evicted). */
 export const HISTORY_MAX = 50
 
@@ -1148,4 +1191,142 @@ export interface HistoryEntryInput extends EcommerceTaskMeta {
   /** Model aliases included in the comparison run. */
   comparisonModels?: string[]
   canvas?: CanvasTaskMeta
+}
+
+/* ==========================================================================
+ * Video generation (即梦 / Seedance via Volcano Ark contents/generations/tasks)
+ * ========================================================================== */
+
+/** Lifecycle of a host-resident video task (mirrors {@link GenerationTaskStatus}). */
+export type VideoTaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+/** How the Ark request is shaped for one shot, derived from its references. */
+export type VideoShotMode = 'text' | 'image' | 'video'
+
+/** One storyboard shot the user can edit before generation. */
+export interface VideoShot {
+  /** 0-based order of the shot in the final cut. */
+  index: number
+  /** Short beat label / on-screen text for this shot. */
+  text: string
+  /** The editable motion prompt sent for this shot. */
+  prompt: string
+  /** Public reference URLs (frames / stills / video) for this shot. */
+  referenceUrls: string[]
+  /** Per-shot duration in seconds (falls back to the request default when 0). */
+  duration: number
+  /** Per-shot aspect ratio (falls back to the request default when ''). */
+  ratio: string
+}
+
+/** A director-style storyboard produced by the multimodal analyze step. */
+export interface VideoScript {
+  /** Work title. */
+  title: string
+  /** Overall narrative / voiceover paragraph. */
+  narrative: string
+  /** Ordered, individually editable shots. */
+  shots: VideoShot[]
+}
+
+/** Request to parse uploaded material into an editable script. */
+export interface VideoScriptAnalyzeRequest {
+  /** JPEG data URLs sampled from uploaded videos (browser-side frame extraction). */
+  frames: string[]
+  /** Image data URLs of uploaded stills. */
+  images: string[]
+  /** Free-form user prompt describing the desired video. */
+  prompt: string
+  /** Optional extra instruction guiding the parse (style / length / tone). */
+  instruction?: string
+}
+
+/** One shot's outcome within a video task (served clip URL once downloaded). */
+export interface VideoShotResult {
+  index: number
+  status: VideoTaskStatus
+  /** Served URL of the finished clip (`${VIDEO_HISTORY_API.file}/<file>`). */
+  url?: string
+  /** Stored relative path of the clip file. */
+  file?: string
+  /** Prompt snapshot used for this shot. */
+  prompt?: string
+  /** Upstream Seedance task id (for diagnostics / re-poll). */
+  taskId?: string
+  error?: string
+}
+
+/** A client → host video generation request (one finished cut). */
+export interface VideoGenerateRequest {
+  /** The storyboard shots to generate and concatenate, in order. */
+  shots: VideoShot[]
+  /** Upstream video model id (a Seedance model, e.g. `doubao-seedance-1-0-pro`). */
+  model: string
+  /** Default aspect ratio when a shot omits its own (e.g. '16:9'). */
+  ratio: string
+  /** Resolution tier, e.g. '480p' / '720p' / '1080p'. */
+  resolution: string
+  /** Default per-shot duration in seconds. */
+  duration: number
+  /** Whether to synthesize an audio track. */
+  generateAudio: boolean
+  /** Whether to add a watermark. */
+  watermark: boolean
+  /** Work title carried onto the history entry. */
+  title?: string
+  /** Overall narrative carried onto the history entry. */
+  narrative?: string
+  /** Channel id when the video provider reuses a configured channel. */
+  channelId?: string
+}
+
+/** A queued video generation task (host-resident orchestration state). */
+export interface VideoTask {
+  id: string
+  request: VideoGenerateRequest
+  status: VideoTaskStatus
+  /** Coarse stage: 'preparing' | 'generating-shot-<i>' | 'concatenating' | 'done'. */
+  stage: string
+  /** 0..1 overall progress across all shots plus the concat step. */
+  progress: number
+  /** Per-shot progress and results, in shot order. */
+  shotResults: VideoShotResult[]
+  createdAt: number
+  startedAt?: number
+  finishedAt?: number
+  /** Served URL of the finished concatenated video. */
+  finalUrl?: string
+  /** Stored relative path of the finished video file. */
+  fileId?: string
+  error?: string
+}
+
+/** One saved video as the browser consumes it (metadata + served URL). */
+export interface VideoHistoryEntry {
+  id: string
+  createdAt: number
+  title: string
+  model: string
+  prompt: string
+  ratio: string
+  resolution: string
+  duration: number
+  shots: number
+  /**
+   * 'completed' carries a finished cut (and a `url`); 'partial' keeps only the
+   * already-downloaded per-shot clips (no `url` yet) and can be retried with
+   * the concat endpoint. Absent for older entries, which are treated as
+   * completed when a `url` is present.
+   */
+  status?: 'completed' | 'partial'
+  /** Number of per-shot clips retained on disk (retry-concat candidate). */
+  clipCount?: number
+  /** Served URL of the finished video (`${VIDEO_HISTORY_API.file}/<file>`). */
+  url?: string
+  /** Optional poster/thumbnail served URL. */
+  poster?: string
+  /** Channel id snapshot. */
+  channelId?: string
+  /** Channel display name snapshot. */
+  channel?: string
 }

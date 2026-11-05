@@ -9,6 +9,12 @@
  * attribute on <html> — no React involvement, so the conversation subtree
  * underneath stays mounted and stateful.
  *
+ * The image studio and the video studio stay mounted together inside the
+ * view. Switching tabs only hides one of them, so an in-progress video
+ * (prompt, uploads, storyboard, task) survives a trip back to the session
+ * or the image studio. Polling pauses while a studio is hidden; the video
+ * panel reattaches to unfinished host tasks when it is shown again.
+ *
  * Shell compatibility: the center column is `[data-pane="conversation"]` on
  * legacy shells and `[class*="centerCol"]` on the rc.6+ AppFrame layout (the
  * same dual selector the dsh-ssh / task-board panels use); both are queried
@@ -141,9 +147,18 @@ export function mountPanel(
   let activeView: ImageGenView = 'session'
 
   const renderPanel = (): void => {
-    root?.render(activeView === 'video'
-      ? <VideoPanel api={api} scope={scope} active={panelActive} />
-      : <ImageGenPanel api={api} scope={scope} active={panelActive} {...services} />)
+    const imageShown = panelActive && activeView === 'image'
+    const videoShown = panelActive && activeView === 'video'
+    root?.render(
+      <>
+        <div className={css.studioSlot} data-shown={activeView === 'image' ? 'true' : 'false'}>
+          <ImageGenPanel api={api} scope={scope} active={imageShown} {...services} />
+        </div>
+        <div className={css.studioSlot} data-shown={activeView === 'video' ? 'true' : 'false'}>
+          <VideoPanel api={api} scope={scope} active={videoShown} />
+        </div>
+      </>,
+    )
   }
 
   const ensure = (): void => {

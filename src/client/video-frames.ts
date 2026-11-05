@@ -51,6 +51,13 @@ function onceSeeked(video: HTMLVideoElement, timeoutMs: number): Promise<void> {
 }
 
 /**
+ * Report extraction progress as `done` attempts finish out of `total`.
+ * Called once per seek, including a seek that fails to encode, so the UI can
+ * move even when a frame is dropped.
+ */
+export type FrameExtractProgress = (done: number, total: number) => void
+
+/**
  * Extract up to `count` evenly-spaced JPEG frames from one video file.
  *
  * The first frame is always skipped a hair (t≈0 is often black) and the last
@@ -58,7 +65,7 @@ function onceSeeked(video: HTMLVideoElement, timeoutMs: number): Promise<void> {
  * frame that fails to encode is silently dropped. Empty result on any decode
  * failure — callers treat that as "this video contributed no frames".
  */
-export async function extractFrames(file: File, count = DEFAULT_FRAME_COUNT): Promise<string[]> {
+export async function extractFrames(file: File, count = DEFAULT_FRAME_COUNT, onProgress?: FrameExtractProgress): Promise<string[]> {
   const target = clampCount(count)
   const url = URL.createObjectURL(file)
   const video = document.createElement('video')
@@ -100,6 +107,7 @@ export async function extractFrames(file: File, count = DEFAULT_FRAME_COUNT): Pr
       } catch {
         // A single bad seek must not abandon the whole video.
       }
+      onProgress?.(i + 1, target)
     }
     return frames
   } catch {

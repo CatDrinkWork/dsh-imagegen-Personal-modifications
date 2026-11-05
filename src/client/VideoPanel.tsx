@@ -21,6 +21,18 @@ import { extractFrames } from './video-frames.ts'
 import { videoDefaults, type ImageGenConfig, type ImageGenScope } from './settings-scope.ts'
 import type { VideoGenerateRequest, VideoHistoryEntry, VideoScript, VideoShot, VideoTask } from '../protocol.ts'
 import css from './video.module.css'
+import panelCss from './panel.module.css'
+
+const CHAT_COLLAPSED_STORAGE_KEY = 'dsh-imagegen:chat-collapsed'
+
+/** The chat pane starts collapsed unless the user explicitly opened it. */
+function readChatOpen(): boolean {
+  try {
+    return window.localStorage.getItem(CHAT_COLLAPSED_STORAGE_KEY) === 'open'
+  } catch {
+    return false
+  }
+}
 
 /** Aspect-ratio presets offered in the config column. */
 const RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'] as const
@@ -401,15 +413,52 @@ export function VideoPanel(props: {
     finally { setHistoryBusy(false) }
   }
 
+  const [chatOpen, setChatOpen] = useState(readChatOpen)
+
+  // Chat-pane visibility rides a document-level attribute so the center-column
+  // grid can drop the conversation entirely. Collapsed by default.
+  useEffect(() => {
+    if (chatOpen) delete document.documentElement.dataset.dshImagegenChatCollapsed
+    else document.documentElement.dataset.dshImagegenChatCollapsed = '1'
+    try { window.localStorage.setItem(CHAT_COLLAPSED_STORAGE_KEY, chatOpen ? 'open' : 'collapsed') } catch { /* optional */ }
+  }, [chatOpen])
+
+  useEffect(() => () => { delete document.documentElement.dataset.dshImagegenChatCollapsed }, [])
+
   const showConfigBanner = !defaults.enabled || !videoKeySet || model.trim() === ''
 
   return (
     <div className={css.panel}>
       <header className={css.header}>
-        <h2 className={css.title}>{tt('video.title')}</h2>
-        <span className={css.status} data-ok={String(defaults.enabled && videoKeySet)}>
-          <span className={css.statusDot} />
-          {defaults.enabled && videoKeySet ? tt('connection.connected') : tt('connection.disconnected')}
+        <span className={panelCss.panelHeading}>
+          <h2 className={panelCss.panelTitle}>{tt('panel.title')}</h2>
+          <a
+            className={panelCss.githubLink}
+            href="https://github.com/CatDrinkWork/dsh-imagegen-Personal-modifications"
+            target="_blank"
+            rel="noreferrer"
+            title={tt('panel.githubTip')}
+            aria-label={tt('panel.githubTip')}
+          >
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+          </a>
+        </span>
+        <span className={panelCss.panelHeaderActions}>
+          <button
+            type="button"
+            className={panelCss.chatToggle}
+            data-open={chatOpen ? 'true' : 'false'}
+            aria-pressed={chatOpen}
+            title={chatOpen ? tt('chat.collapse') : tt('chat.expand')}
+            onClick={() => { setChatOpen(open => !open) }}
+          >
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2.5 3.5h11v7.5H6.8L3.8 13.6v-2.6H2.5z"/></svg>
+            {tt('chat.toggle')}
+          </button>
+          <span className={css.status} data-ok={String(defaults.enabled && videoKeySet)}>
+            <span className={css.statusDot} />
+            {defaults.enabled && videoKeySet ? tt('connection.connected') : tt('connection.disconnected')}
+          </span>
         </span>
       </header>
 

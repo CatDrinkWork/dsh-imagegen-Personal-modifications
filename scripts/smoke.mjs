@@ -3046,7 +3046,7 @@ await check('D1 client bundle registers via __ModuleLoader__ and exposes the can
   assert.equal([...new Set(required)].sort().join(','), Object.keys(stubs).sort().join(','))
   assert.equal(typeof exportsOf.apply, 'function')
   // Cross-realm array (VM context): compare contents, not identity.
-  assert.equal([...exportsOf.inject].join(','), 'slots,locale,connection,sessions,conversation')
+  assert.equal([...exportsOf.inject].join(','), 'slots,locale,connection,sessions,conversation,uiConversation')
 
   // --- canvas raster helpers (image-ops.ts), reachable only through the bundle
   // Cross-realm values (VM context): spread into local objects before comparing.
@@ -4005,6 +4005,9 @@ await check('E1 client apply mounts the sidebar entry and studio (jsdom)', async
   const ctx = {
     effect(fn) { return fn() },
     on() { return () => {} },
+    // registerImageToolviews() registers the image turn-tail event on the host
+    // conversation service; stub the events API so apply() can run headless.
+    uiConversation: { events: { register() {} } },
     get(name) {
       if (name === 'connection') return { isLoopback: true }
       return undefined
@@ -4119,10 +4122,10 @@ await check('E1 client apply mounts the sidebar entry and studio (jsdom)', async
 
   try {
     // Regression: the scope must settle (a scope that never loads leaves the
-    // UI unmounted forever) and the two session tabs must be inserted.
+    // UI unmounted forever) and the three session tabs must be inserted.
     const entry = jsdomDocument.querySelector('[data-dsh-imagegen-session-tabs]')
     assert.ok(entry !== null, 'session tabs were mounted')
-    assert.equal(entry.querySelectorAll('[data-dsh-imagegen-tab]').length, 2, 'session and image tabs are present')
+    assert.equal(entry.querySelectorAll('[data-dsh-imagegen-tab]').length, 3, 'session, image and video tabs are present')
     assert.ok(entry.textContent.includes('生图'), 'image tab label localized')
     assert.equal(jsdomDocument.querySelector('[data-dsh-imagegen-entry]'), null, 'standalone image entry was removed')
     const view = jsdomDocument.querySelector('[data-dsh-imagegen-view]')

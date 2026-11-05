@@ -1,6 +1,9 @@
 /** GitHub Release discovery and explicit, user-triggered plugin updates. */
 
 import { spawn, type ChildProcess } from 'node:child_process'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLUGIN_VERSION } from './protocol.ts'
 
 /** Keep this in sync with package.json for each published release. */
@@ -10,6 +13,8 @@ export const RELEASES_URL = 'https://api.github.com/repos/CatDrinkWork/dsh-image
 
 const CHECK_TIMEOUT_MS = 10_000
 const CACHE_TTL_MS = 15 * 60_000
+/** Release tarballs can be tens of MB; allow a generous download window. */
+const DOWNLOAD_TIMEOUT_MS = 120_000
 
 export interface UpdateInfo {
   currentVersion: string
@@ -19,6 +24,8 @@ export interface UpdateInfo {
   publishedAt?: string
   /** Markdown release body shown in the update popover. */
   releaseNotes?: string
+  /** Direct download URL of the release `.tgz` asset, when one is attached. */
+  downloadUrl?: string
 }
 
 interface GitHubRelease {
@@ -28,6 +35,7 @@ interface GitHubRelease {
   body?: unknown
   draft?: unknown
   prerelease?: unknown
+  assets?: unknown
 }
 
 let cached: { expiresAt: number; value: UpdateInfo } | undefined
@@ -49,6 +57,18 @@ function normalizedReleaseVersion(tag: unknown): string | undefined {
   return tag.trim().replace(/^v/, '')
 }
 
+/** Pick the first `.tgz` release asset's direct download URL, if present. */
+function pickTarballDownloadUrl(assets: unknown): string | undefined {
+  if (!Array.isArray(assets)) return undefined
+  for (const asset of assets) {
+    if (asset === null || typeof asset !== 'object') continue
+    const name = (asset as { name?: unknown }).name
+    const url = (asset as { browser_download_url?: unknown }).browser_download_url
+    if (typeof name === 'string' && name.endsWith('.tgz') && typeof url === 'string' && url !== '') return url
+  }
+  return undefined
+}
+
 /** Read the latest stable GitHub Release, with a short host-side cache. */
 export async function checkForUpdate(fetchFn: typeof fetch = fetch, now = Date.now()): Promise<UpdateInfo> {
   if (cached !== undefined && cached.expiresAt > now) return cached.value
@@ -68,6 +88,7 @@ export async function checkForUpdate(fetchFn: typeof fetch = fetch, now = Date.n
   if (latestVersion === undefined) throw new Error('latest GitHub Release has an invalid version tag')
   const releaseUrl = typeof release.html_url === 'string' ? release.html_url : 'https://github.com/CatDrinkWork/dsh-imagegen-Personal-modifications/releases'
   const releaseNotes = typeof release.body === 'string' ? release.body.trim() : ''
+  const downloadUrl = pickTarballDownloadUrl(release.assets)
   const value: UpdateInfo = {
     currentVersion: CURRENT_VERSION,
     latestVersion,
@@ -75,6 +96,7 @@ export async function checkForUpdate(fetchFn: typeof fetch = fetch, now = Date.n
     releaseUrl,
     ...typeof release.published_at === 'string' ? { publishedAt: release.published_at } : {},
     ...releaseNotes === '' ? {} : { releaseNotes: releaseNotes.slice(0, 20_000) },
+    ...downloadUrl === undefined ? {} : { downloadUrl },
   }
   cached = { expiresAt: now + CACHE_TTL_MS, value }
   return value
@@ -91,19 +113,16 @@ export function profileFromProcess(argv: readonly string[] = process.argv, env: 
   return 'web'
 }
 
-/** Run the same official command documented for plugin installation. */
-export function installUpdate(
-  version: string,
-  spawnFn: typeof spawn = spawn,
-  argv: readonly string[] = process.argv,
-  env: NodeJS.ProcessEnv = process.env,
+/** Invoke `dsh plugin add <source>` where source is an npm spec or a local tarball. */
+function spawnPluginAdd(
+  source: string,
+  spawnFn: typeof spawn,
+  argv: readonly string[],
+  env: NodeJS.ProcessEnv,
 ): Promise<void> {
-  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
-    return Promise.reject(new Error('invalid update version'))
-  }
   const profile = profileFromProcess(argv, env)
   const command = process.platform === 'win32' ? 'dsh.cmd' : 'dsh'
-  const child = spawnFn(command, ['plugin', '--profile', profile, 'add', `${PACKAGE_NAME}@${version}`], {
+  const child = spawnFn(command, ['plugin', '--profile', profile, 'add', source], {
     shell: process.platform === 'win32',
     stdio: 'ignore',
   }) as ChildProcess
@@ -114,6 +133,40 @@ export function installUpdate(
       else reject(new Error(signal === null ? `plugin update exited with code ${code ?? 'unknown'}` : `plugin update terminated by ${signal}`))
     })
   })
+}
+
+/**
+ * Install an update. When the release carries a `.tgz` asset we download it and
+ * install from the local file, so a personal fork works without publishing to
+ * npm; otherwise we fall back to the registry spec `@dickpy/dsh-imagegen@<ver>`.
+ */
+export async function installUpdate(
+  version: string,
+  downloadUrl: string | undefined,
+  spawnFn: typeof spawn = spawn,
+  argv: readonly string[] = process.argv,
+  env: NodeJS.ProcessEnv = process.env,
+  fetchFn: typeof fetch = fetch,
+): Promise<void> {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+    throw new Error('invalid update version')
+  }
+  if (downloadUrl === undefined || downloadUrl === '') {
+    await spawnPluginAdd(`${PACKAGE_NAME}@${version}`, spawnFn, argv, env)
+    return
+  }
+  const response = await fetchFn(downloadUrl, { redirect: 'follow', signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
+  if (!response.ok) throw new Error(`release download returned HTTP ${response.status}`)
+  const bytes = Buffer.from(await response.arrayBuffer())
+  if (bytes.byteLength === 0) throw new Error('release download was empty')
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-imagegen-update-'))
+  const file = join(dir, `${PACKAGE_NAME.replace(/^@/, '').replace(/[\\/]/g, '-')}-${version}.tgz`)
+  try {
+    await writeFile(file, bytes)
+    await spawnPluginAdd(file, spawnFn, argv, env)
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+  }
 }
 
 /** Test helper: clear the host-side Release cache. */

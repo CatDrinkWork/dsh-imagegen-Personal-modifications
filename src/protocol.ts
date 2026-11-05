@@ -8,7 +8,7 @@
 export const IMAGEGEN_SETTINGS_NAMESPACE = 'dsh-imagegen'
 
 /** Published package version shared by the host updater and the client UI. */
-export const PLUGIN_VERSION = '1.6.8'
+export const PLUGIN_VERSION = '1.7.1'
 
 /** Same-origin route family (loopback-only, mirroring the dsh-ssh fence). */
 export const SETTINGS_API = {
@@ -1130,6 +1130,8 @@ export interface UpdateInfo {
   publishedAt?: string
   /** Markdown release body shown in the update popover. */
   releaseNotes?: string
+  /** Direct download URL of the release `.tgz` asset, when one is attached. */
+  downloadUrl?: string
 }
 
 /** One history image reference as the browser consumes it (a served URL). */

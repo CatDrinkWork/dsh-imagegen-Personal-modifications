@@ -999,7 +999,7 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
             writeJson(res, 200, { ok: false, code: 'update-not-available', message: `version ${version} is not the latest available release` })
             return
           }
-          await installUpdate(version)
+          await installUpdate(version, latest.downloadUrl)
           writeJson(res, 200, { ok: true, currentVersion: CURRENT_VERSION, updatedVersion: version, restartRequired: true })
         } catch (error) {
           writeJson(res, 200, { ok: false, code: 'update-failed', message: messageOf(error) })

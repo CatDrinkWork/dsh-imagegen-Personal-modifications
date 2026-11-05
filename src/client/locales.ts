@@ -1,7 +1,7 @@
 // NOTICE (Apache-2.0 §4(b)): Modified in this fork (CatDrinkWork/dsh-imagegen-Personal-modifications)
 // from the upstream @dickpy/dsh-imagegen project (Apache-2.0). Original copyright and license are
 // retained in LICENSE; see MODIFICATIONS.md. Changes in this file: copy keys for image-to-image
-// multi-reference upload.
+// multi-reference upload, and for one-shot video generation plus parse progress.
 /**
  * dsh-imagegen surface copy: zh is the key source, en mirrors every key.
  */
@@ -930,8 +930,15 @@ export const zh = {
   'video.promptTitle': '描述与解析',
   'video.promptPlaceholder': '描述你想要的视频，例如：一只橘猫在月球上漫步，电影感运镜，黄昏暖光…',
   'video.instructionPlaceholder': '解析指令（可选）：风格 / 节奏 / 旁白语气 / 分镜数量…',
+  'video.generateOne': '直接生成一条',
+  'video.generateOneBusy': '正在生成一条…',
+  'video.needDirectPrompt': '请先写下视频描述，再直接生成一条',
   'video.analyze': '解析分镜',
   'video.analyzing': '解析中…',
+  'video.analyzeFrames': '正在抽帧 {done}/{total}',
+  'video.analyzeWriting': '正在写分镜…',
+  'video.analyzeNoFrames': '没有从上传的视频里抽出画面，本次只按文字和图片解析。',
+  'video.analyzeDropped': '已达到 24 帧上限，其余 {count} 个视频没有参与解析。',
   'video.analyzeFailed': '解析失败：{error}',
   'video.needMaterial': '请上传素材或输入提示词后再解析',
   'video.scriptTitle': '分镜脚本',
@@ -1892,8 +1899,15 @@ export const en: Record<keyof typeof zh, string> = {
   'video.promptTitle': 'Describe and parse',
   'video.promptPlaceholder': 'Describe the video you want, e.g. an orange cat strolling on the moon, cinematic camera move, warm dusk light…',
   'video.instructionPlaceholder': 'Optional parse instruction: style / pacing / voiceover tone / shot count…',
+  'video.generateOne': 'Generate one clip',
+  'video.generateOneBusy': 'Generating one clip…',
+  'video.needDirectPrompt': 'Write a description before generating one clip',
   'video.analyze': 'Parse storyboard',
   'video.analyzing': 'Parsing…',
+  'video.analyzeFrames': 'Extracting frames {done}/{total}',
+  'video.analyzeWriting': 'Writing the storyboard…',
+  'video.analyzeNoFrames': 'No frames could be extracted from the uploaded videos. This parse uses only the text and images.',
+  'video.analyzeDropped': 'The 24-frame cap was reached, so the remaining {count} video(s) were not parsed.',
   'video.analyzeFailed': 'Parse failed: {error}',
   'video.needMaterial': 'Upload material or enter a prompt before parsing',
   'video.scriptTitle': 'Storyboard',
@@ -2856,8 +2870,15 @@ export const ru: Record<keyof typeof zh, string> = {
   'video.promptTitle': 'Описание и разбор',
   'video.promptPlaceholder': 'Опишите нужное видео, напр.: рыжий кот гуляет по Луне, кинематографичный проход камеры, тёплый свет заката…',
   'video.instructionPlaceholder': 'Необязательная инструкция разбора: стиль / темп / тон закадрового текста / число кадров…',
+  'video.generateOne': 'Сгенерировать один ролик',
+  'video.generateOneBusy': 'Генерация одного ролика…',
+  'video.needDirectPrompt': 'Сначала опишите видео, затем сгенерируйте один ролик',
   'video.analyze': 'Разобрать раскадровку',
   'video.analyzing': 'Разбор…',
+  'video.analyzeFrames': 'Извлечение кадров {done}/{total}',
+  'video.analyzeWriting': 'Запись раскадровки…',
+  'video.analyzeNoFrames': 'Из загруженных видео не удалось извлечь кадры. Разбор идёт только по тексту и изображениям.',
+  'video.analyzeDropped': 'Достигнут предел в 24 кадра, остальные видео ({count}) не разбирались.',
   'video.analyzeFailed': 'Сбой разбора: {error}',
   'video.needMaterial': 'Загрузите материалы или введите описание перед разбором',
   'video.scriptTitle': 'Раскадровка',

@@ -246,7 +246,19 @@
 
 .blockActions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.note {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 /* --- material lists -------------------------------------------------------- */

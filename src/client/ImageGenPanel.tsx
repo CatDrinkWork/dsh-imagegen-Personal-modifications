@@ -770,13 +770,25 @@ export function ImageGenPanel(props: {
     }
   }, [configCollapsed])
 
+  // Both studios stay mounted, so pick up a toggle made on the video panel.
+  const chatWasActive = useRef(active)
+  if (active !== chatWasActive.current) {
+    chatWasActive.current = active
+    if (active) {
+      const stored = readChatOpen()
+      if (stored !== chatOpen) setChatOpen(stored)
+    }
+  }
+
   // Chat-pane visibility rides a document-level attribute so the center-column
-  // grid can drop the conversation entirely. Collapsed by default.
+  // grid can drop the conversation entirely. Collapsed by default. Only the
+  // visible studio writes it, otherwise the hidden one would collapse the chat.
   useEffect(() => {
+    if (!active) return
     if (chatOpen) delete document.documentElement.dataset.dshImagegenChatCollapsed
     else document.documentElement.dataset.dshImagegenChatCollapsed = '1'
     try { window.localStorage.setItem(CHAT_COLLAPSED_STORAGE_KEY, chatOpen ? 'open' : 'collapsed') } catch { /* optional */ }
-  }, [chatOpen])
+  }, [active, chatOpen])
 
   useEffect(() => () => { delete document.documentElement.dataset.dshImagegenChatCollapsed }, [])
 

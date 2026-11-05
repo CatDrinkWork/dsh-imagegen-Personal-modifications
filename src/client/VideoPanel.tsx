@@ -2,8 +2,9 @@
  * The AI 视频 studio (即梦 / Seedance): a three-column workbench mirroring the
  * image panel — left, generation parameters (model / ratio / resolution /
  * per-shot duration / audio / watermark); center, the four-step workflow
- * (upload material → parse an editable storyboard → generate per shot → concat
- * and preview); right, a persistent video history column.
+ * (upload material → describe and either generate one clip or parse an
+ * editable storyboard → generate per shot → concat and preview); right, a
+ * persistent video history column.
  *
  * The heavy lifting (Seedance submit/poll/download + ffmpeg concat) lives
  * host-side behind the video routes; this component only drives the wire
@@ -40,6 +41,15 @@ const RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'] as const
 const RESOLUTIONS = ['480p', '720p', '1080p'] as const
 /** Poll cadence for a running video task (video is slow; keep it light). */
 const TASK_POLL_MS = 3000
+/** Frames sampled from each uploaded video before the storyboard parse. */
+const FRAMES_PER_VIDEO = 6
+/** Hard cap posted to the parser; further videos are reported and skipped. */
+const FRAME_CAP = 24
+
+/** Visible phase of the storyboard parse (frame grab, then model write). */
+type AnalyzeStage =
+  | { kind: 'frames'; done: number; total: number }
+  | { kind: 'writing' }
 
 /** Read the current config from the settings scope snapshot. */
 function useConfig(scope: ImageGenScope): ImageGenConfig | undefined {
@@ -176,9 +186,14 @@ export function VideoPanel(props: {
 
   // ---- workflow state -------------------------------------------------------
   const [analyzing, setAnalyzing] = useState(false)
+  const [analyzeStage, setAnalyzeStage] = useState<AnalyzeStage | null>(null)
+  const [analyzeNotes, setAnalyzeNotes] = useState<string[]>([])
   const [script, setScript] = useState<VideoScript | null>(null)
   const [task, setTask] = useState<VideoTask | null>(null)
+  /** Bumped when a submit lands so an in-flight task-list refresh cannot overwrite it. */
+  const taskAttachGen = useRef(0)
   const [submitting, setSubmitting] = useState(false)
+  const [directing, setDirecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [history, setHistory] = useState<VideoHistoryEntry[]>([])
   const [historyBusy, setHistoryBusy] = useState(false)
@@ -187,6 +202,10 @@ export function VideoPanel(props: {
     && videoKeySet
     && model.trim() !== ''
     && (script?.shots ?? []).some(shot => shot.prompt.trim() !== '')
+  const canDirect = defaults.enabled
+    && videoKeySet
+    && model.trim() !== ''
+    && prompt.trim() !== ''
 
   // ---- history load ---------------------------------------------------------
   const refreshHistory = useCallback(async (): Promise<void> => {
@@ -247,6 +266,35 @@ export function VideoPanel(props: {
     reader.readAsText(file)
   }
 
+  // ---- reattach to a host task when the studio is shown again --------------
+  // The panel stays mounted across tab switches, so local state usually
+  // survives. This still covers a conversation-pane remount (the view is
+  // rebuilt) and a task that finished or kept running while polling was paused.
+  useEffect(() => {
+    if (!active) return
+    const generation = taskAttachGen.current
+    let disposed = false
+    void api.videoTaskList()
+      .then(tasks => {
+        if (disposed || generation !== taskAttachGen.current) return
+        const live = tasks.find(item => item.status === 'queued' || item.status === 'running')
+        setTask(current => {
+          const newerLocal = current !== null && live !== undefined && current.id !== live.id && current.createdAt > live.createdAt
+          const next = live !== undefined && !newerLocal
+            ? live
+            : current === null
+              ? null
+              : tasks.find(item => item.id === current.id) ?? current
+          if (next?.status === 'completed' && current?.status !== 'completed') void refreshHistory()
+          return next
+        })
+      })
+      .catch(() => {
+        // Opening the studio must not surface a list failure; an attached task keeps polling.
+      })
+    return () => { disposed = true }
+  }, [active, api, refreshHistory])
+
   // ---- task polling ---------------------------------------------------------
   useEffect(() => {
     if (!active || task === null) return
@@ -296,25 +344,53 @@ export function VideoPanel(props: {
   // ---- analyze --------------------------------------------------------------
   const analyze = useCallback(async (): Promise<void> => {
     setError(null)
+    setAnalyzeNotes([])
     setAnalyzing(true)
     try {
       const frames: string[] = []
-      for (const file of videoFiles) {
-        const extracted = await extractFrames(file, 6)
-        frames.push(...extracted)
-        if (frames.length >= 24) break
+      let droppedVideos = 0
+      if (videoFiles.length > 0) {
+        const planned = Math.min(FRAME_CAP, videoFiles.length * FRAMES_PER_VIDEO)
+        let attempted = 0
+        setAnalyzeStage({ kind: 'frames', done: 0, total: planned })
+        for (let index = 0; index < videoFiles.length; index += 1) {
+          if (frames.length >= FRAME_CAP) {
+            droppedVideos = videoFiles.length - index
+            break
+          }
+          const want = Math.min(FRAMES_PER_VIDEO, FRAME_CAP - frames.length)
+          const file = videoFiles[index]
+          if (file === undefined) continue
+          const extracted = await extractFrames(file, want, (done) => {
+            setAnalyzeStage({ kind: 'frames', done: Math.min(planned, attempted + done), total: planned })
+          })
+          attempted += want
+          frames.push(...extracted)
+          setAnalyzeStage({ kind: 'frames', done: Math.min(planned, attempted), total: planned })
+        }
       }
       const imageUrls = images.map(image => image.dataUrl).filter(url => url !== '')
+      const notes: string[] = []
+      if (videoFiles.length > 0 && frames.length === 0) notes.push(tt('video.analyzeNoFrames'))
+      if (droppedVideos > 0) notes.push(tt('video.analyzeDropped', { count: droppedVideos }))
+      setAnalyzeNotes(notes)
       if (frames.length === 0 && imageUrls.length === 0 && prompt.trim() === '') {
         setError(tt('video.needMaterial'))
         return
       }
-      const parsed = await api.videoAnalyze({ frames: frames.slice(0, 24), images: imageUrls.slice(0, 12), prompt, instruction: instruction.trim() === '' ? undefined : instruction.trim() })
+      setAnalyzeStage({ kind: 'writing' })
+      const parsed = await api.videoAnalyze({
+        frames: frames.slice(0, FRAME_CAP),
+        images: imageUrls.slice(0, 12),
+        prompt,
+        instruction: instruction.trim() === '' ? undefined : instruction.trim(),
+      })
       setScript({ ...parsed, shots: reindex(parsed.shots.length > 0 ? parsed.shots : emptyScript().shots) })
     } catch (err) {
       setError(tt('video.analyzeFailed', { error: errorMessage(err) }))
     } finally {
       setAnalyzing(false)
+      setAnalyzeStage(null)
     }
   }, [api, images, instruction, prompt, videoFiles])
 
@@ -352,11 +428,24 @@ export function VideoPanel(props: {
   }
 
   // ---- generate -------------------------------------------------------------
-  const submit = useCallback(async (): Promise<void> => {
+  const submitRequest = useCallback(async (request: VideoGenerateRequest): Promise<void> => {
+    // A list refresh opened with the studio must not replace this new task.
+    taskAttachGen.current += 1
     setError(null)
+    setSubmitting(true)
+    try {
+      setTask(await api.videoTaskSubmit(request))
+    } catch (err) {
+      setError(tt('video.submitFailed', { error: errorMessage(err) }))
+    } finally {
+      setSubmitting(false)
+    }
+  }, [api])
+
+  const submit = useCallback(async (): Promise<void> => {
     const shots = (script?.shots ?? []).filter(shot => shot.prompt.trim() !== '')
     if (shots.length === 0) { setError(tt('video.needPrompt')); return }
-    const request: VideoGenerateRequest = {
+    await submitRequest({
       shots: reindex(shots),
       model: model.trim(),
       ratio,
@@ -366,17 +455,30 @@ export function VideoPanel(props: {
       watermark,
       ...script?.title ? { title: script.title } : {},
       ...script?.narrative ? { narrative: script.narrative } : {},
-    }
-    setSubmitting(true)
+    })
+  }, [duration, generateAudio, model, ratio, resolution, script, submitRequest, watermark])
+
+  /** One clip from the prompt box, using the left-column ratio and duration. */
+  const generateOne = useCallback(async (): Promise<void> => {
+    const text = prompt.trim()
+    if (!defaults.enabled || !videoKeySet || model.trim() === '') return
+    if (text === '') { setError(tt('video.needDirectPrompt')); return }
+    const shot: VideoShot = { index: 0, text: '', prompt: text, referenceUrls: [], duration: 0, ratio: '' }
+    setDirecting(true)
     try {
-      const created = await api.videoTaskSubmit(request)
-      setTask(created)
-    } catch (err) {
-      setError(tt('video.submitFailed', { error: errorMessage(err) }))
+      await submitRequest({
+        shots: [shot],
+        model: model.trim(),
+        ratio,
+        resolution,
+        duration,
+        generateAudio,
+        watermark,
+      })
     } finally {
-      setSubmitting(false)
+      setDirecting(false)
     }
-  }, [api, duration, generateAudio, model, ratio, resolution, script, watermark])
+  }, [defaults.enabled, duration, generateAudio, model, prompt, ratio, resolution, submitRequest, videoKeySet, watermark])
 
   const cancelTask = useCallback(async (): Promise<void> => {
     if (task === null) return
@@ -414,14 +516,25 @@ export function VideoPanel(props: {
   }
 
   const [chatOpen, setChatOpen] = useState(readChatOpen)
+  // Both studios stay mounted, so pick up a toggle made on the other one.
+  const chatWasActive = useRef(active)
+  if (active !== chatWasActive.current) {
+    chatWasActive.current = active
+    if (active) {
+      const stored = readChatOpen()
+      if (stored !== chatOpen) setChatOpen(stored)
+    }
+  }
 
   // Chat-pane visibility rides a document-level attribute so the center-column
-  // grid can drop the conversation entirely. Collapsed by default.
+  // grid can drop the conversation entirely. Collapsed by default. Only the
+  // visible studio writes it, otherwise the hidden one would collapse the chat.
   useEffect(() => {
+    if (!active) return
     if (chatOpen) delete document.documentElement.dataset.dshImagegenChatCollapsed
     else document.documentElement.dataset.dshImagegenChatCollapsed = '1'
     try { window.localStorage.setItem(CHAT_COLLAPSED_STORAGE_KEY, chatOpen ? 'open' : 'collapsed') } catch { /* optional */ }
-  }, [chatOpen])
+  }, [active, chatOpen])
 
   useEffect(() => () => { delete document.documentElement.dataset.dshImagegenChatCollapsed }, [])
 
@@ -576,9 +689,18 @@ export function VideoPanel(props: {
             <textarea className={css.textarea} rows={3} value={prompt} placeholder={tt('video.promptPlaceholder')} onChange={event => setPrompt(event.target.value)} />
             <input className={css.input} value={instruction} placeholder={tt('video.instructionPlaceholder')} onChange={event => setInstruction(event.target.value)} />
             <div className={css.blockActions}>
-              <Button variant="primary" disabled={analyzing} onClick={() => void analyze()}>{analyzing ? tt('video.analyzing') : tt('video.analyze')}</Button>
-              <Button variant="outline" onClick={() => scriptInputRef.current?.click()}>{tt('video.importScript')}</Button>
+              <Button variant="primary" disabled={!canDirect || submitting || analyzing} onClick={() => void generateOne()}>{directing ? tt('video.generateOneBusy') : tt('video.generateOne')}</Button>
+              <Button variant="outline" disabled={analyzing || submitting} onClick={() => void analyze()}>{analyzing ? tt('video.analyzing') : tt('video.analyze')}</Button>
+              <Button variant="outline" disabled={analyzing || submitting} onClick={() => scriptInputRef.current?.click()}>{tt('video.importScript')}</Button>
             </div>
+            {analyzeStage !== null ? (
+              <p className={css.hint} role="status">
+                {analyzeStage.kind === 'frames'
+                  ? tt('video.analyzeFrames', { done: analyzeStage.done, total: analyzeStage.total })
+                  : tt('video.analyzeWriting')}
+              </p>
+            ) : null}
+            {analyzeNotes.map(note => <p key={note} className={css.note} role="status">{note}</p>)}
             <input ref={scriptInputRef} type="file" accept="application/json,.json" hidden onChange={event => onPickScriptFile(event.target.files)} />
           </div>
 
